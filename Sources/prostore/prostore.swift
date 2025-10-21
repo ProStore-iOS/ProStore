@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct ProSign: App {
+struct ProStore: App {
     var body: some Scene {
         WindowGroup {
             MainTabView()
@@ -14,7 +14,7 @@ struct MainTabView: View {
         TabView {
             NavigationStack {
                 SignerView()
-                    .navigationTitle("ProSign - Signer")
+                    .navigationTitle("ProStore - Signer")
                     .navigationBarTitleDisplayMode(.large)
             }
             .tabItem {
@@ -24,7 +24,7 @@ struct MainTabView: View {
 
             NavigationStack {
                 CertificateView()
-                    .navigationTitle("ProSign - Certificates")
+                    .navigationTitle("ProStore - Certificates")
                     .navigationBarTitleDisplayMode(.large)
             }
             .tabItem {
@@ -34,7 +34,7 @@ struct MainTabView: View {
 
             NavigationStack {
                 AboutView()
-                    .navigationTitle("ProSign - About")
+                    .navigationTitle("ProStore - About")
                     .navigationBarTitleDisplayMode(.large)
             }
             .tabItem {

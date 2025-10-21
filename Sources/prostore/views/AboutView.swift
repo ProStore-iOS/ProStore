@@ -38,7 +38,7 @@ struct AboutView: View {
     ]
 
     private var appIconURL: URL? {
-        URL(string: "https://raw.githubusercontent.com/ProStore-iOS/ProSign/main/Sources/prosign/Assets.xcassets/AppIcon.appiconset/Icon-1024.png")
+        URL(string: "https://raw.githubusercontent.com/ProStore-iOS/ProStore/main/Sources/prostore/Assets.xcassets/AppIcon.appiconset/Icon-1024.png")
     }
 
     private var versionString: String {
@@ -71,7 +71,7 @@ struct AboutView: View {
                         }
                     }
 
-                    Text("ProSign")
+                    Text("ProStore")
                         .font(.title2)
                         .fontWeight(.semibold)
 
