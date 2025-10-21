@@ -1,0 +1,50 @@
+name: prosign
+
+options:
+  bundleIdPrefix: com.prostoreios
+
+configs:
+  Release: release
+
+packages:
+  ProStoreTools:
+    url: https://github.com/ProStore-iOS/ProStoreTools.git
+    branch: main
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation.git
+    branch: main
+
+targets:
+  prosign:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources: [Sources/prosign]
+    bundleId: com.prostoreios.prosign
+    settings:
+      IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+      ASSETCATALOG_COMPILER_APPICON_NAME: "AppIcon"
+      SWIFT_OPTIMIZATION_LEVEL: "-Owholemodule"
+    info:
+      path: "Info.plist"
+      properties:
+        CFBundleDisplayName: "ProSign"
+        CFBundleName: "prosign"
+        CFBundleVersion: "55"
+        CFBundleShortVersionString: "3.0.1"
+        UILaunchStoryboardName: "LaunchScreen"
+        NSPrincipalClass: "UIApplication"
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        CFBundleURLTypes:
+          - CFBundleURLName: "com.prostoreios.prosign"
+            CFBundleURLSchemes:
+              - prosign
+              - ProSign
+    dependencies:
+      - package: ProStoreTools
+        product: ProStoreTools
+      - package: ZIPFoundation
+        product: ZIPFoundation
