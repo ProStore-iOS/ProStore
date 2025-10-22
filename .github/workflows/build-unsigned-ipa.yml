@@ -3,7 +3,7 @@ name: ProStore iOS Build and Release
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ ProSign ]
     paths-ignore:
       - 'README.md'
       - 'gallery/**'
