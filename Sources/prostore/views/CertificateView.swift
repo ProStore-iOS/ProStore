@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
-import ProStoreTools
 import ZIPFoundation
+
 // Centralized types to avoid conflicts
 struct CertificateFileItem {
     var name: String = ""
