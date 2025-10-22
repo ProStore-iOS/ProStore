@@ -1,0 +1,162 @@
+name: ProStore iOS Simulator Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Show Xcode Version
+        run: |
+          echo "=== xcodebuild -version ==="
+          xcodebuild -version || true
+          echo "=== sw_vers ==="
+          sw_vers || true
+
+      - name: Install Build Tools
+        run: |
+          # jq
+          if ! command -v jq >/dev/null 2>&1; then
+            echo "jq not found — attempting to install via brew"
+            if command -v brew >/dev/null 2>&1; then
+              brew install jq || true
+            fi
+          fi
+
+          # yq
+          if ! command -v yq >/dev/null 2>&1; then
+            echo "yq not found — attempting to install via brew"
+            if command -v brew >/dev/null 2>&1; then
+              brew install yq || true
+            fi
+          fi
+
+          # gh (GitHub CLI)
+          if ! command -v gh >/dev/null 2>&1; then
+            echo "gh not found — attempting to install via brew"
+            if command -v brew >/dev/null 2>&1; then
+              brew install gh || true
+            fi
+          fi
+
+          # xcodegen
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            echo "xcodegen not found — attempting to install via brew"
+            if command -v brew >/dev/null 2>&1; then
+              brew install xcodegen || true
+            fi
+          fi
+
+          # Fallback: official gh installer script (works across platforms)
+          if ! command -v gh >/dev/null 2>&1; then
+            echo "gh still not found — attempting official installer script"
+            curl -fsSL https://cli.github.com/install.sh | sh || true
+          fi
+
+          echo "Tool versions (if installed):"
+          echo "jq: $(jq --version 2>/dev/null || echo 'not installed')"
+          echo "yq: $(yq --version 2>/dev/null || echo 'not installed')"
+          echo "gh: $(gh --version 2>/dev/null || echo 'not installed')"
+          echo "xcodegen: $(xcodegen --version 2>/dev/null || echo 'not installed')"
+        shell: bash
+
+      - name: Check Project Files
+        run: |
+          echo "Workspace files:"
+          ls -la || true
+          echo "project.yml (first 200 lines):"
+          sed -n '1,200p' project.yml || true
+
+      - name: Generate Xcode Project
+        run: |
+          set -e
+          xcodegen generate --spec project.yml
+          echo "Generated project at: $(pwd)/prostore.xcodeproj"
+          echo "project.pbxproj header (first 60 lines):"
+          sed -n '1,60p' prostore.xcodeproj/project.pbxproj || true
+
+      - name: Resolve Swift Packages
+        run: |
+          set -e
+          echo "Resolving Swift package dependencies for ProStore..."
+          xcodebuild -resolvePackageDependencies -project prostore.xcodeproj -scheme prostore -configuration Release
+
+      - name: Build simulator (iphonesimulator) and package simulator .ipa (if possible)
+        id: build_sim
+        run: |
+          set -e
+          echo "Starting simulator build (won't fail the entire job if it fails)."
+          SIM_DERIVED="$PWD/build/sim_derived"
+          rm -rf "$SIM_DERIVED"
+          set +e
+          xcodebuild clean build \
+            -project prostore.xcodeproj \
+            -scheme prostore \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -derivedDataPath "$SIM_DERIVED" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY=""
+          rc=$?
+          set -e
+          if [ $rc -ne 0 ]; then
+            echo "Warning: simulator build failed (exit $rc). Will attempt to recover packaging if a simulator .app exists."
+          fi
+
+          POSSIBLE_APPS=(
+            "$SIM_DERIVED/Build/Products/Release-iphonesimulator/prostore.app"
+            "$SIM_DERIVED/Build/Products/Debug-iphonesimulator/prostore.app"
+            "$PWD/build/Build/Products/Release-iphonesimulator/prostore.app"
+            "$PWD/build/Release-iphonesimulator/prostore.app"
+          )
+
+          FOUND_APP=""
+          for p in "${POSSIBLE_APPS[@]}"; do
+            if [ -d "$p" ]; then
+              FOUND_APP="$p"
+              break
+            fi
+          done
+
+          if [ -z "$FOUND_APP" ]; then
+            echo "Simulator .app not found in expected locations. Listing $SIM_DERIVED contents for debug:"
+            ls -la "$SIM_DERIVED" || true
+            echo "Skipping simulator .ipa packaging."
+            exit 0
+          fi
+
+          echo "Found simulator .app at: $FOUND_APP"
+          SIM_IPA="build/com.prostoreios.prostore-unsigned-iossimulator.ipa"
+          mkdir -p build/Payload-sim
+          rm -rf build/Payload-sim/* || true
+          cp -R "$FOUND_APP" build/Payload-sim/
+          (cd build && zip -r "$(basename "$SIM_IPA")" Payload-sim) || exit 1
+          echo "Created simulator ipa: $SIM_IPA"
+          ls -la "$SIM_IPA" || true
+
+      - name: Set simulator artifact path output
+        id: set_sim_art
+        run: |
+          IPA="build/com.prostoreios.prostore-unsigned-iossimulator.ipa"
+          if [ -f "$IPA" ]; then
+            echo "ipa_path=$IPA" >> $GITHUB_OUTPUT
+          else
+            echo "ipa_path=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload Simulator IPA artifact
+        if: steps.set_sim_art.outputs.ipa_path != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: com.prostoreios.prostore-unsigned-iossimulator.ipa
+          path: ${{ steps.set_sim_art.outputs.ipa_path }}
