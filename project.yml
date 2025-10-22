@@ -7,9 +7,9 @@ configs:
   Release: release
 
 packages:
-  ProStoreTools:
-    url: https://github.com/ProStore-iOS/ProStoreTools.git
-    branch: main
+  Zsign-Package:
+    url: https://github.com/khcrysalis/Zsign-Package.git
+    branch: package
   ZIPFoundation:
     url: https://github.com/weichsel/ZIPFoundation.git
     branch: main
@@ -44,7 +44,7 @@ targets:
               - prostore
               - ProStore
     dependencies:
-      - package: ProStoreTools
-        product: ProStoreTools
+      - package: Zsign-Package
+        product: ZsignSwift
       - package: ZIPFoundation
         product: ZIPFoundation
