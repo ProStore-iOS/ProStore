@@ -2,13 +2,13 @@ name: ProStore iOS Build and Release
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
-    paths-ignore:
-      - 'README.md'
-      - 'gallery/**'
-      - 'website/**'
-      - '.github/**'
+#   push:
+#     branches: [ main ]
+#     paths-ignore:
+#       - 'README.md'
+#       - 'gallery/**'
+#       - 'website/**'
+#       - '.github/**'
 
 permissions:
   contents: write
