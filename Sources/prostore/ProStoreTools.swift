@@ -1,286 +1,203 @@
-import SwiftUI
-import UniformTypeIdentifiers
-
-struct SignerView: View {
-    @StateObject private var ipa = FileItem()
-    @State private var isProcessing = false
-    @State private var overallProgress: Double = 0.0
-    @State private var currentStage: String = ""
-    @State private var barColor: Color = .blue
-    @State private var isError: Bool = false
-    @State private var errorDetails: String = ""
-    @State private var showActivity = false
-    @State private var activityURL: URL? = nil
-    @State private var showPickerFor: PickerKind? = nil
-    @State private var selectedCertificateName: String? = nil
-    @State private var expireStatus: String = "Unknown"
-    @State private var hasSelectedCertificate: Bool = false
-
-    var body: some View {
-        Form {
-            Section(header: Text("Inputs")
-                .font(.headline)
-                .foregroundColor(.primary)
-                .padding(.top, 8)) {
-                // IPA picker with icon and truncated file name
-                HStack {
-                    Image(systemName: "doc.fill")
-                        .foregroundColor(.blue)
-                    Text("IPA")
-                    Spacer()
-                    Text(ipa.name.isEmpty ? "No file selected selected" : ipa.name)
-                        .font(.caption)
-                        .lineLimit(1)
-                        .foregroundColor(.secondary)
-                    Button(action: {
-                        showPickerFor = .ipa
-                    }) {
-                        Text("Pick")
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.blue.opacity(0.1))
-                            .cornerRadius(8)
-                    }
-                }
-                .padding(.vertical, 4)
-                if hasSelectedCertificate, let name = selectedCertificateName {
-                    Text("The \(name) certificate (\(expireStatus)) will be used to sign the ipa file. If you wish to use a different certificate for signing, please select or add it to the certificates page.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .padding(.vertical, 4)
-                } else {
-                    Text("No certificate selected. Please add and select one in the Certificates tab.")
-                        .foregroundColor(.red)
-                        .padding(.vertical, 4)
-                }
-            }
-            Section {
-                Button(action: runSign) {
-                    HStack {
-                        Spacer()
-                        Text("Sign IPA")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .padding()
-                            .frame(maxWidth: .infinity)
-                            .background(isProcessing || ipa.url == nil || !hasSelectedCertificate ? Color.gray : Color.blue)
-                            .cornerRadius(10)
-                            .shadow(radius: 2)
-                        Spacer()
-                    }
-                }
-                .disabled(isProcessing || ipa.url == nil || !hasSelectedCertificate)
-                .scaleEffect(isProcessing ? 0.95 : 1.0)
-                .animation(.easeInOut(duration: 0.2), value: isProcessing)
-            }
-            .padding(.vertical, 8)
-            if isProcessing || !currentStage.isEmpty {
-                Section(header: Text("Progress")
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                    .padding(.top, 8)) {
-                    HStack {
-                        Text(currentStage)
-                            .foregroundColor(currentStage == "Error" ? .red : currentStage == "Done!" ? .green : .primary)
-                            .animation(.easeInOut(duration: 0.2), value: currentStage)
-                        ProgressView(value: overallProgress)
-                            .progressViewStyle(.linear)
-                            .tint(barColor)
-                            .frame(maxWidth: .infinity)
-                            .animation(.easeInOut(duration: 0.5), value: overallProgress)
-                            .animation(.default, value: barColor)
-                        Text("\(Int(overallProgress * 100))%")
-                            .foregroundColor(currentStage == "Error" ? .red : currentStage == "Done!" ? .green : .primary)
-                            .animation(nil, value: overallProgress)
-                    }
-                    if isError {
-                        Text(errorDetails)
-                            .foregroundColor(.red)
-                            .font(.subheadline)
-                    }
-                }
-            }
-        }
-        .accentColor(.blue)
-        .sheet(item: $showPickerFor, onDismiss: nil) { kind in
-            DocumentPicker(kind: kind, onPick: { url in
-                switch kind {
-                case .ipa:
-                    ipa.url = url
-                default:
-                    break
-                }
-            })
-        }
-        .sheet(isPresented: $showActivity) {
-            if let u = activityURL {
-                ActivityView(url: u)
-            } else {
-                Text("No file to share")
-                    .foregroundColor(.red)
-            }
-        }
-        .onAppear {
-            loadSelectedCertificate()
-        }
-    }
-
-    private func loadSelectedCertificate() {
-        guard let selectedFolder = UserDefaults.standard.string(forKey: "selectedCertificateFolder") else {
-            hasSelectedCertificate = false
-            return
-        }
-        let certDir = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(selectedFolder)
-        do {
-            if let nameData = try? Data(contentsOf: certDir.appendingPathComponent("name.txt")),
-               let name = String(data: nameData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !name.isEmpty {
-                selectedCertificateName = name
-            } else {
-                selectedCertificateName = "Custom Certificate"
-            }
-            let provURL = certDir.appendingPathComponent("profile.mobileprovision")
-            if let expiry = ProStoreTools.getExpirationDate(provURL: provURL) {
-                let now = Date()
-                let components = Calendar.current.dateComponents([.day], from: now, to: expiry)
-                let days = components.day ?? 0
-                switch days {
-                case ..<0, 0:
-                    expireStatus = "Expired"
-                case 1...30:
-                    expireStatus = "Expiring Soon"
-                default:
-                    expireStatus = "Valid"
-                }
-            } else {
-                expireStatus = "Unknown"
-            }
-            hasSelectedCertificate = true
-        } catch {
-            hasSelectedCertificate = false
-            selectedCertificateName = nil
-            expireStatus = "Unknown"
-        }
-    }
-
-    func runSign() {
-        guard let ipaURL = ipa.url else {
-            currentStage = "Error"
-            errorDetails = "Pick IPA file first 😅"
-            isError = true
-            withAnimation {
-                overallProgress = 1.0
-                barColor = .red
-            }
-            return
-        }
-        guard let selectedFolder = UserDefaults.standard.string(forKey: "selectedCertificateFolder") else {
-            currentStage = "Error"
-            errorDetails = "No certificate selected 😅"
-            isError = true
-            withAnimation {
-                overallProgress = 1.0
-                barColor = .red
-            }
-            return
-        }
-        let certDir = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(selectedFolder)
-        let p12URL = certDir.appendingPathComponent("certificate.p12")
-        let provURL = certDir.appendingPathComponent("profile.mobileprovision")
-        let passwordURL = certDir.appendingPathComponent("password.txt")
-        guard FileManager.default.fileExists(atPath: p12URL.path), FileManager.default.fileExists(atPath: provURL.path) else {
-            currentStage = "Error"
-            errorDetails = "Error loading certificate files 😅"
-            isError = true
-            withAnimation {
-                overallProgress = 1.0
-                barColor = .red
-            }
-            return
-        }
-        let p12Password: String
-        if let passwordData = try? Data(contentsOf: passwordURL),
-           let passwordStr = String(data: passwordData, encoding: .utf8) {
-            p12Password = passwordStr
-        } else {
-            p12Password = ""
-        }
-        isProcessing = true
-        currentStage = "Preparing"
-        overallProgress = 0.0
-        barColor = .blue
-        isError = false
-        errorDetails = ""
-        ProStoreTools.sign(
+import Foundation
+import ZIPFoundation
+import ZsignSwift
+ 
+public enum ProStoreTools {
+    public static func sign(
+        ipaURL: URL,
+        p12URL: URL,
+        provURL: URL,
+        p12Password: String,
+        progressUpdate: @escaping (String) -> Void = { _ in },
+        completion: @escaping (Result<URL, Error>) -> Void
+    ) {
+        SigningManager.sign(
             ipaURL: ipaURL,
             p12URL: p12URL,
             provURL: provURL,
             p12Password: p12Password,
-            progressUpdate: { message in
-                DispatchQueue.main.async {
-                    updateProgress(from: message)
-                }
-            },
-            completion: { result in
-                DispatchQueue.main.async {
-                    isProcessing = false
-                    switch result {
-                    case .success(let signedIPAURL):
-                        activityURL = signedIPAURL
-                        withAnimation {
-                            overallProgress = 1.0
-                            barColor = .green
-                            currentStage = "Done!"
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                            showActivity = true
-                        }
-                    case .failure(let error):
-                        withAnimation {
-                            overallProgress = 1.0
-                            barColor = .red
-                            currentStage = "Error"
-                        }
-                        isError = true
-                        errorDetails = error.localizedDescription
-                    }
-                }
-            }
+            progressUpdate: progressUpdate,
+            completion: completion
         )
     }
-
-    private func updateProgress(from message: String) {
-        if message.contains("Preparing") {
-            currentStage = "Preparing"
-            overallProgress = 0.0
-        } else if message.contains("Unzipping") {
-            currentStage = "Unzipping"
-            if let pct = extractPercentage(from: message) {
-                overallProgress = 0.25 + (pct / 100.0) * 0.25
-            } else {
-                overallProgress = 0.25
-            }
-        } else if message.contains("Signing") {
-            currentStage = "Signing"
-            overallProgress = 0.5
-        } else if message.contains("Zipping") {
-            currentStage = "Zipping"
-            if let pct = extractPercentage(from: message) {
-                overallProgress = 0.75 + (pct / 100.0) * 0.25
-            } else {
-                overallProgress = 0.75
+    
+    public static func getExpirationDate(provURL: URL) -> Date? {
+        guard let data = try? Data(contentsOf: provURL) else { return nil }
+        return getExpirationDate(provData: data)
+    }
+    
+    public static func getExpirationDate(provData: Data) -> Date? {
+        let startTag = Data("<plist".utf8)
+        let endTag = Data("</plist>".utf8)
+        
+        guard let startRange = provData.range(of: startTag),
+              let endRange = provData.range(of: endTag) else {
+            return nil
+        }
+        
+        let plistDataSlice = provData[startRange.lowerBound..<endRange.upperBound]
+        let plistData = Data(plistDataSlice)
+        
+        guard let parsed = try? PropertyListSerialization.propertyList(from: plistData, options: [], format: nil),
+              let dict = parsed as? [String: Any],
+              let expDate = dict["ExpirationDate"] as? Date else {
+            return nil
+        }
+        
+        return expDate
+    }
+}
+ 
+fileprivate class SigningManager {
+    static func sign(
+        ipaURL: URL,
+        p12URL: URL,
+        provURL: URL,
+        p12Password: String,
+        progressUpdate: @escaping (String) -> Void,
+        completion: @escaping (Result<URL, Error>) -> Void
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                progressUpdate("Preparing files 📂")
+                let (tmpRoot, inputsDir, workDir) = try prepareTemporaryWorkspace()
+                defer {
+                    cleanupTemporaryFiles(at: tmpRoot)
+                }
+                let (localIPA, localP12, localProv) = try copyInputFiles(
+                    ipaURL: ipaURL,
+                    p12URL: p12URL,
+                    provURL: provURL,
+                    to: inputsDir
+                )
+                progressUpdate("Unzipping IPA 🔓")
+                try extractIPA(ipaURL: localIPA, to: workDir, progressUpdate: progressUpdate)
+                let payloadDir = workDir.appendingPathComponent("Payload")
+                let appDir = try findAppBundle(in: payloadDir)
+                progressUpdate("Signing \(appDir.lastPathComponent) ✍️")
+                let sema = DispatchSemaphore(value: 0)
+                var signingError: Error?
+                // Use the ZsignSwift API
+                _ = Zsign.sign(
+                    appPath: appDir.path,
+                    provisionPath: localProv.path,
+                    p12Path: localP12.path,
+                    p12Password: p12Password,
+                    entitlementsPath: "",
+                    removeProvision: false
+                ) { _, error in
+                    signingError = error
+                    sema.signal()
+                }
+                sema.wait()
+                if let error = signingError {
+                    throw error
+                }
+                progressUpdate("Zipping signed IPA 📦")
+                let signedIPAURL = try createSignedIPA(
+                    from: workDir,
+                    originalIPAURL: ipaURL,
+                    outputDir: tmpRoot,
+                    progressUpdate: progressUpdate
+                )
+                completion(.success(signedIPAURL))
+            } catch {
+                completion(.failure(error))
             }
         }
     }
-
-    private func extractPercentage(from message: String) -> Double? {
-        if let range = message.range(of: "(") {
-            let substring = message[range.lowerBound...]
-            if let endRange = substring.range(of: "%)") {
-                let pctString = substring[..<endRange.lowerBound].dropFirst()
-                return Double(pctString)
+   
+    // MARK: - workspace helpers
+    static func prepareTemporaryWorkspace() throws -> (URL, URL, URL) {
+        let fm = FileManager.default
+        let tmpRoot = fm.temporaryDirectory.appendingPathComponent("zsign_ios_\(UUID().uuidString)")
+        let inputs = tmpRoot.appendingPathComponent("inputs")
+        let work = tmpRoot.appendingPathComponent("work")
+        try fm.createDirectory(at: inputs, withIntermediateDirectories: true)
+        try fm.createDirectory(at: work, withIntermediateDirectories: true)
+        return (tmpRoot, inputs, work)
+    }
+   
+    static func copyInputFiles(
+        ipaURL: URL,
+        p12URL: URL,
+        provURL: URL,
+        to inputsDir: URL
+    ) throws -> (URL, URL, URL) {
+        let fm = FileManager.default
+        let localIPA = inputsDir.appendingPathComponent(ipaURL.lastPathComponent)
+        let localP12 = inputsDir.appendingPathComponent(p12URL.lastPathComponent)
+        let localProv = inputsDir.appendingPathComponent(provURL.lastPathComponent)
+        [localIPA, localP12, localProv].forEach { dest in
+            if fm.fileExists(atPath: dest.path) {
+                try? fm.removeItem(at: dest)
             }
         }
-        return nil
+        try fm.copyItem(at: ipaURL, to: localIPA)
+        try fm.copyItem(at: p12URL, to: localP12)
+        try fm.copyItem(at: provURL, to: localProv)
+        return (localIPA, localP12, localProv)
+    }
+   
+    static func extractIPA(
+        ipaURL: URL,
+        to workDir: URL,
+        progressUpdate: @escaping (String) -> Void
+    ) throws {
+        let fm = FileManager.default
+        let progress = Progress()
+        let observation = progress.observe(\Progress.fractionCompleted) { prog, _ in
+            let pct = Int(prog.fractionCompleted * 100)
+            progressUpdate("Unzipping IPA 🔓 (\(pct)%)")
+        }
+        defer {
+            observation.invalidate()
+        }
+        try fm.unzipItem(at: ipaURL, to: workDir, progress: progress)
+    }
+   
+    static func findAppBundle(in payloadDir: URL) throws -> URL {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: payloadDir.path) else {
+            throw NSError(domain: "ProStoreTools", code: 1, userInfo: [NSLocalizedDescriptionKey: "Payload not found"])
+        }
+        let contents = try fm.contentsOfDirectory(atPath: payloadDir.path)
+        guard let appName = contents.first(where: { $0.hasSuffix(".app") }) else {
+            throw NSError(domain: "ProStoreTools", code: 2, userInfo: [NSLocalizedDescriptionKey: "No .app bundle in Payload"])
+        }
+        return payloadDir.appendingPathComponent(appName)
+    }
+   
+    static func createSignedIPA(
+        from workDir: URL,
+        originalIPAURL: URL,
+        outputDir: URL,
+        progressUpdate: @escaping (String) -> Void
+    ) throws -> URL {
+        let fm = FileManager.default
+        let originalBase = originalIPAURL.deletingPathExtension().lastPathComponent
+        let finalFileName = "\(originalBase)_signed_\(UUID().uuidString).ipa"
+        let signedIpa = outputDir.appendingPathComponent(finalFileName)
+        let progress = Progress()
+        let observation = progress.observe(\Progress.fractionCompleted) { prog, _ in
+            let pct = Int(prog.fractionCompleted * 100)
+            progressUpdate("Zipping signed IPA 📦 (\(pct)%)")
+        }
+        defer {
+            observation.invalidate()
+        }
+        try fm.zipItem(at: workDir, to: signedIpa, shouldKeepParent: false, progress: progress)
+        // Copy to Documents for sharing
+        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let outURL = docs.appendingPathComponent(finalFileName)
+        if fm.fileExists(atPath: outURL.path) {
+            try fm.removeItem(at: outURL)
+        }
+        try fm.copyItem(at: signedIpa, to: outURL)
+        return outURL
+    }
+   
+    static func cleanupTemporaryFiles(at url: URL) {
+        try? FileManager.default.removeItem(at: url)
     }
 }
