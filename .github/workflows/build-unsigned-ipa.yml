@@ -1,0 +1,505 @@
+name: ProStore iOS Build and Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - 'README.md'
+      - 'gallery/**'
+      - 'website/**'
+      - '.github/**'
+
+permissions:
+  contents: write
+
+jobs:
+  build-unsigned-ipa:
+    name: Build IPA
+    runs-on: macos-15
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      release_exists: ${{ steps.check_release.outputs.exists }}
+      changelog: ${{ steps.generate_changelog.outputs.CHANGELOG }}
+      cached_object_version: ${{ steps.cache_object_version.outputs.object_version }}
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Show Xcode Version
+        run: |
+          echo "=== xcodebuild -version ==="
+          xcodebuild -version || true
+          echo "=== sw_vers ==="
+          sw_vers || true
+
+      - name: Install Build Tools
+        run: |
+          # jq
+          if ! command -v jq >/dev/null 2>&1; then
+            echo "jq not found — attempting to install via brew"
+            if command -v brew >/dev/null 2>&1; then
+              brew install jq || true
+            fi
+          fi
+
+          # yq
+          if ! command -v yq >/dev/null 2>&1; then
+            echo "yq not found — attempting to install via brew"
+            if command -v brew >/dev/null 2>&1; then
+              brew install yq || true
+            fi
+          fi
+
+          # gh (GitHub CLI)
+          if ! command -v gh >/dev/null 2>&1; then
+            echo "gh not found — attempting to install via brew"
+            if command -v brew >/dev/null 2>&1; then
+              brew install gh || true
+            fi
+          fi
+
+          # xcodegen
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            echo "xcodegen not found — attempting to install via brew"
+            if command -v brew >/dev/null 2>&1; then
+              brew install xcodegen || true
+            fi
+          fi
+
+          # Fallback: official gh installer script (works across platforms)
+          if ! command -v gh >/dev/null 2>&1; then
+            echo "gh still not found — attempting official installer script"
+            curl -fsSL https://cli.github.com/install.sh | sh || true
+          fi
+
+          echo "Tool versions (if installed):"
+          echo "jq: $(jq --version 2>/dev/null || echo 'not installed')"
+          echo "yq: $(yq --version 2>/dev/null || echo 'not installed')"
+          echo "gh: $(gh --version 2>/dev/null || echo 'not installed')"
+          echo "xcodegen: $(xcodegen --version 2>/dev/null || echo 'not installed')"
+        shell: bash
+
+      - name: Check Project Files
+        run: |
+          echo "Workspace files:"
+          ls -la || true
+          echo "project.yml (first 200 lines):"
+          sed -n '1,200p' project.yml || true
+
+      - name: Generate Xcode Project
+        run: |
+          set -e
+          xcodegen generate --spec project.yml
+          echo "Generated project at: $(pwd)/prostore.xcodeproj"
+          echo "project.pbxproj header (first 60 lines):"
+          sed -n '1,60p' prostore.xcodeproj/project.pbxproj || true
+
+      - name: Resolve Swift Packages
+        run: |
+          set -e
+          echo "Resolving Swift package dependencies for prostore..."
+          xcodebuild -resolvePackageDependencies -project prostore.xcodeproj -scheme prostore -configuration Release
+
+      - name: Build IPA
+        id: cache_object_version
+        run: |
+          set -e
+          ARCHIVE_PATH="$PWD/build/prostore.xcarchive"
+          mkdir -p build
+          
+          # Try to read cached objectVersion from file
+          CACHE_FILE=".object_version_cache"
+          CACHED_VERSION=""
+          candidates=(77)
+          
+          if [ -f "$CACHE_FILE" ]; then
+            CACHED_VERSION=$(cat "$CACHE_FILE" | tr -d '\n')
+            echo "Found cached objectVersion: $CACHED_VERSION"
+            
+            # Test the cached version first
+            echo "----- Testing cached objectVersion = $CACHED_VERSION -----"
+            /usr/bin/perl -0777 -pe "s/objectVersion = \\d+;/objectVersion = $CACHED_VERSION;/" -i.bak prostore.xcodeproj/project.pbxproj || true
+            
+            set +e
+            xcodebuild clean archive \
+              -project prostore.xcodeproj \
+              -scheme prostore \
+              -archivePath "$ARCHIVE_PATH" \
+              -sdk iphoneos \
+              -configuration Release \
+              CODE_SIGN_IDENTITY="" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+            rc=$?
+            set -e
+            
+            if [ $rc -eq 0 ]; then
+              echo "✅ Cached objectVersion $CACHED_VERSION works!"
+              echo "object_version=$CACHED_VERSION" >> $GITHUB_OUTPUT
+              echo "$CACHED_VERSION" > "$CACHE_FILE"
+              exit 0
+            else
+              echo "❌ Cached objectVersion $CACHED_VERSION failed, trying other candidates..."
+            fi
+          fi
+          
+          # If no cache or cached version failed, try all candidates
+          build_ok=0
+          for v in "${candidates[@]}"; do
+            echo "----- Attempting build with objectVersion = $v -----"
+            /usr/bin/perl -0777 -pe "s/objectVersion = \\d+;/objectVersion = $v;/" -i.bak prostore.xcodeproj/project.pbxproj || true
+            echo "Applied objectVersion $v. Header preview:"
+            sed -n '1,20p' prostore.xcodeproj/project.pbxproj || true
+            echo "Running xcodebuild archive..."
+            set +e
+            xcodebuild clean archive \
+              -project prostore.xcodeproj \
+              -scheme prostore \
+              -archivePath "$ARCHIVE_PATH" \
+              -sdk iphoneos \
+              -configuration Release \
+              CODE_SIGN_IDENTITY="" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+            rc=$?
+            set -e
+            if [ $rc -eq 0 ]; then
+              echo "✅ xcodebuild succeeded with objectVersion = $v"
+              echo "object_version=$v" >> $GITHUB_OUTPUT
+              echo "$v" > "$CACHE_FILE"
+              echo "Cached successful objectVersion: $v"
+              build_ok=1
+              break
+            else
+              echo "❌ xcodebuild failed (exit $rc). Trying next objectVersion..."
+            fi
+          done
+          
+          if [ "$build_ok" -ne 1 ]; then
+            echo "ERROR: All objectVersion attempts failed. Dumping debug info:"
+            echo "===== project.pbxproj header ====="
+            sed -n '1,200p' prostore.xcodeproj/project.pbxproj || true
+            echo "===== build directory listing ====="
+            ls -la build || true
+            exit 74
+          fi
+
+      - name: Package Device IPA
+        run: |
+          set -e
+          ARCHIVE_PATH="$PWD/build/prostore.xcarchive"
+          APP_PATH="$ARCHIVE_PATH/Products/Applications/prostore.app"
+          OUTPUT_IPA="build/com.prostoreios.prostore-unsigned-ios.ipa"
+          echo "Device app path: $APP_PATH"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "ERROR: App not found at expected path. Listing archive contents:"
+            ls -la "$ARCHIVE_PATH" || true
+            exit 1
+          fi
+          mkdir -p build/Payload
+          rm -rf build/Payload/* || true
+          cp -R "$APP_PATH" build/Payload/
+          (cd build && zip -r "$(basename "$OUTPUT_IPA")" Payload) || exit 1
+          echo "Created device ipa: $OUTPUT_IPA"
+          ls -la "$OUTPUT_IPA" || true
+
+      - name: Upload Device IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: com.prostoreios.prostore-unsigned-ios.ipa
+          path: build/com.prostoreios.prostore-unsigned-ios.ipa
+
+      - name: Get App Version
+        id: get_version
+        run: |
+          VERSION=$(yq '.targets.prostore.info.properties.CFBundleShortVersionString' project.yml)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Detected version: $VERSION"
+
+      - name: Check Release Exists
+        id: check_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          TAG="v$VERSION"
+          echo "Checking if release $TAG exists..."
+          if command -v gh >/dev/null 2>&1 && gh release view "$TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Changelog
+        id: generate_changelog
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          set -e
+          VERSION="${{ steps.get_version.outputs.version }}"
+          CURRENT_VERSION="$VERSION"
+          SINCE_COMMIT=""
+
+          # Walk commits that touched project.yml from newest -> oldest
+          for c in $(git rev-list HEAD -- project.yml); do
+            file=$(git show "$c:project.yml" 2>/dev/null || true)
+            if [ -z "$file" ]; then
+              continue
+            fi
+            v=$(printf "%s" "$file" | yq '.targets.prostore.info.properties.CFBundleShortVersionString' 2>/dev/null || true)
+            if [ -z "$v" ]; then
+              continue
+            fi
+            if [ "$v" != "$CURRENT_VERSION" ]; then
+              SINCE_COMMIT="$c"
+              break
+            fi
+          done
+
+          # Always capture HEAD message
+          HEAD_MSG=$(git log -1 --pretty=format:%s HEAD || echo "")
+
+          # Derive SINCE_DATE (ISO 8601) from SINCE_COMMIT
+          if [ -n "$SINCE_COMMIT" ]; then
+            SINCE_DATE=$(git show -s --format=%cI "$SINCE_COMMIT" 2>/dev/null || true)
+          else
+            SINCE_DATE=""
+          fi
+
+          # Determine repo owner/repo
+          ORIGIN_URL=$(git remote get-url origin 2>/dev/null || true)
+          OWNER_REPO=$(printf "%s" "$ORIGIN_URL" | sed -E 's#.*github.com[:/]+([^/]+/[^/]+)(\.git)?#\1#')
+
+          # Fetch workflow runs
+          RUNS_JSON=""
+          if [ -n "$OWNER_REPO" ] && command -v gh >/dev/null 2>&1; then
+            echo "Fetching recent workflow runs for ${OWNER_REPO}..."
+            RUNS_JSON=$(gh api -H "Accept: application/vnd.github+json" \
+              /repos/"$OWNER_REPO"/actions/runs \
+              -f per_page=100 -f event=push 2>/dev/null || true)
+            
+            if [ -z "$RUNS_JSON" ] || [ "$(printf "%s" "$RUNS_JSON" | jq '.workflow_runs | length')" -eq 0 ]; then
+              RUNS_JSON=$(gh api -H "Accept: application/vnd.github+json" \
+                /repos/"$OWNER_REPO"/actions/runs \
+                -f per_page=100 -f event=workflow_dispatch 2>/dev/null || true)
+            fi
+          fi
+
+          WORKFLOW_LINES=""
+          if [ -n "$RUNS_JSON" ] && printf "%s" "$RUNS_JSON" | jq -e '.workflow_runs | length > 0' >/dev/null 2>&1; then
+            if [ -n "$SINCE_DATE" ]; then
+              SINCE_DATE_UTC=$(date -u -j -f "%Y-%m-%dT%H:%M:%S%z" "$SINCE_DATE" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "$SINCE_DATE")
+              WORKFLOW_LINES=$(printf "%s" "$RUNS_JSON" | jq -r --arg SINCE "$SINCE_DATE_UTC" '
+              [.workflow_runs[] | select(.created_at >= $SINCE)] |
+              sort_by(.created_at)[] |
+              ( "- " + (.head_commit.message // .name // .workflow_name) +
+                " (#" + (.run_number|tostring) + ") — " +
+                ((.conclusion // "in_progress") | tostring) +
+                " — " + (.created_at // "") +
+                " — branch: " + (.head_branch // "") )' || true)
+            else
+              WORKFLOW_LINES=$(printf "%s" "$RUNS_JSON" | jq -r '
+                [.workflow_runs[]] | sort_by(.created_at)[] |
+                ( "     - " +
+                  (if (.head_commit.message | length) > 0 then .head_commit.message
+                   else (if (.name|length) > 0 then .name else .workflow_name end) end) +
+                  " (#" + (.run_number|tostring) + ") — " +
+                  ((.conclusion // "in_progress") | tostring) +
+                  " — " + (.created_at // "") +
+                  " — branch: " + (.head_branch // "") )' || true)
+            fi
+
+            if [ -n "$WORKFLOW_LINES" ]; then
+              WORKFLOW_LINES=$(printf "%s\n" "$WORKFLOW_LINES" | awk 'NF && !seen[$0]++ { print $0 }' || true)
+            fi
+          fi
+
+          # Fallback to commit messages
+          if [ -z "$WORKFLOW_LINES" ]; then
+            if [ -n "$SINCE_COMMIT" ]; then
+              COMMITS_RAW=$(git log --pretty=format:%s "${SINCE_COMMIT}..HEAD" --reverse 2>/dev/null || true)
+              COMMITS_RAW=$(echo "$COMMITS_RAW" | grep -v "Update ProStore app repo to v" || true)
+            else
+              COMMITS_RAW=""
+            fi
+          fi
+
+          # Build description
+          printf -v DESC "What's new in Version %s?\n" "$VERSION"
+
+          if [ -n "$HEAD_MSG" ]; then
+            DESC+=$'- '"$HEAD_MSG"$'\n'
+          fi
+
+          if [ -n "$WORKFLOW_LINES" ]; then
+            DESC+="${WORKFLOW_LINES}"$'\n'
+          elif [ -n "$COMMITS_RAW" ]; then
+            OTHER_LINES=$(printf "%s\n" "$COMMITS_RAW" | awk -v head="$HEAD_MSG" 'NF && $0!=head { print "- "$0 }' || true)
+            if [ -n "$OTHER_LINES" ]; then
+              DESC+="${OTHER_LINES}"$'\n'
+            fi
+          fi
+
+          DESC="${DESC%$'\n'}"
+          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          printf '%s\n' "$DESC" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        shell: bash
+
+  create-github-release:
+    name: Create GitHub Release
+    needs: build-unsigned-ipa
+    if: needs.build-unsigned-ipa.outputs.release_exists == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install GitHub CLI
+        run: |
+          # gh (GitHub CLI)
+          if ! command -v gh >/dev/null 2>&1; then
+            echo "gh not found — attempting official installer script"
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+            sudo apt update
+            sudo apt install gh -y || true
+          fi
+
+          echo "gh: $(gh --version 2>/dev/null || echo 'not installed')"
+
+      - name: Download Device IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: com.prostoreios.prostore-unsigned-ios.ipa
+          path: build
+
+      - name: Create Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build-unsigned-ipa.outputs.version }}
+          CHANGELOG: ${{ needs.build-unsigned-ipa.outputs.changelog }}
+        run: |
+          TAG="v$VERSION"
+          echo "Creating release $TAG with notes:"
+          printf '%s\n' "$CHANGELOG"
+          DEVICE_IPA="build/com.prostoreios.prostore-unsigned-ios.ipa"
+          gh release create "$TAG" \
+            "$DEVICE_IPA" \
+            --title "ProStore v$VERSION" \
+            --notes "$CHANGELOG" \
+            --repo "$GITHUB_REPOSITORY"
+        shell: bash
+
+  update-prostore-repo-json:
+    name: Update ProStore Repo JSON
+    needs: build-unsigned-ipa
+    if: needs.build-unsigned-ipa.outputs.release_exists == 'false'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.build-unsigned-ipa.outputs.version }}
+      CHANGELOG: ${{ needs.build-unsigned-ipa.outputs.changelog }}
+    steps:
+      - name: Install jq
+        run: |
+          # jq
+          if ! command -v jq >/dev/null 2>&1; then
+            echo "jq not found — attempting to install"
+            sudo apt update
+            sudo apt install jq -y || true
+          fi
+
+          echo "jq: $(jq --version 2>/dev/null || echo 'not installed')"
+
+      - name: Download Device IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: com.prostoreios.prostore-unsigned-ios.ipa
+          path: build
+
+      - name: Update Apps JSON in Pages Repo
+        env:
+          PAGES_PAT: ${{ secrets.PAGES_PAT }}
+        run: |
+          set -e
+          IPA_PATH="$PWD/build/com.prostoreios.prostore-unsigned-ios.ipa"
+          DOWNLOAD_URL="https://github.com/ProStore-iOS/ProStore/releases/download/v$VERSION/com.prostoreios.prostore-unsigned-ios.ipa"
+
+          if [ -f "$IPA_PATH" ]; then
+            IPA_SIZE=$(stat -c%s "$IPA_PATH")
+            SHA256=$(sha256sum "$IPA_PATH" | awk '{print $1}')
+          else
+            IPA_SIZE=0
+            SHA256=""
+          fi
+
+          VERSION_DATE_ISO=$(date -u +"%Y-%m-%dT%H:%M:%S%z")
+          MIN_OS="16.0"
+          FULL_DATE=$(date +%Y%m%d%H%M%S)
+
+          ICON_URL="https://raw.githubusercontent.com/ProStore-iOS/ProStore/refs/heads/main/Sources/prostore/Assets.xcassets/AppIcon.appiconset/Icon-1024.png"
+          BUNDLE="com.prostoreios.prostore"
+          META_DESC="The BEST alternative app store for iOS!"
+          DEVNAME="ProStore iOS"
+          SCREENSHOTS='["https://raw.githubusercontent.com/ProStore-iOS/ProStore/refs/heads/main/gallery/Screenshot1.png","https://raw.githubusercontent.com/ProStore-iOS/ProStore/refs/heads/main/gallery/Screenshot2.png","https://raw.githubusercontent.com/ProStore-iOS/ProStore/refs/heads/main/gallery/Screenshot3.png","https://raw.githubusercontent.com/ProStore-iOS/ProStore/refs/heads/main/gallery/Screenshot4.png","https://raw.githubusercontent.com/ProStore-iOS/ProStore/refs/heads/main/gallery/Screenshot5.png"]'
+
+          PAGES_REPO="ProStore-iOS/ProStore-iOS.github.io"
+          PAGES_DIR=$(mktemp -d)
+
+          echo "Cloning pages repo (masked token)..."
+          git clone --depth 1 "https://x-access-token:${PAGES_PAT}@github.com/${PAGES_REPO}.git" "$PAGES_DIR"
+
+          cd "$PAGES_DIR"
+          REPO_FILE="apps.json"
+
+          # Create base repo JSON if missing (first run only)
+          if [ ! -f "$REPO_FILE" ]; then
+            jq -n --arg icon "$ICON_URL" '{
+              name: "Official ProStore Repo",
+              identifier: "com.prostoreios.prostore.repo",
+              sourceURL: "https://ProStore-iOS.github.io/apps.json",
+              iconURL: $icon,
+              website: "https://ProStore-iOS.github.io",
+              subtitle: "The BEST alternative app store for iOS!",
+              apps: []
+            }' > "$REPO_FILE"
+          fi
+
+          TMP=$(mktemp)
+
+          # Build the JSON representation of the new version (on one line to avoid parser issues)
+          NEW_VERSION=$(jq -c -n \
+            --arg version "$VERSION" \
+            --arg date "$VERSION_DATE_ISO" \
+            --arg desc "$CHANGELOG" \
+            --arg url "$DOWNLOAD_URL" \
+            --arg sha "$SHA256" \
+            --arg minos "$MIN_OS" \
+            --arg fulldate "$FULL_DATE" \
+            --argjson size "$IPA_SIZE" \
+            '{version: $version, date: $date, localizedDescription: $desc, downloadURL: $url, size: $size, sha256: $sha, minOSVersion: $minos, fullDate: $fulldate}')
+
+          # Single-line jq filter (YAML-friendly, with .apps //= [] for robustness)
+          JQ_QUERY='(.apps //= []) | if ( .apps | map(.bundleIdentifier // .bundleID) | index($bundle) ) then .apps |= map( if ((.bundleIdentifier // .bundleID) == $bundle) then ( { "name": $name, "bundleIdentifier": $bundle, "developerName": $dev, "localizedDescription": $appdesc, "iconURL": $icon, "screenshotURLs": $screenshots } + { "versions": ( [ $newVer ] + ( .versions // [] ) ) } ) else . end ) else .apps += [ { "name": $name, "bundleIdentifier": $bundle, "developerName": $dev, "localizedDescription": $appdesc, "iconURL": $icon, "screenshotURLs": $screenshots, "versions": [ $newVer ] } ] end'
+
+          # Update or create the app entry (pass screenshots as argjson directly)
+          jq --argjson newVer "$NEW_VERSION" \
+             --arg name "ProStore" \
+             --arg bundle "$BUNDLE" \
+             --arg dev "$DEVNAME" \
+             --arg appdesc "$META_DESC" \
+             --arg icon "$ICON_URL" \
+             --argjson screenshots "$SCREENSHOTS" \
+             "$JQ_QUERY" "$REPO_FILE" > "$TMP" && mv "$TMP" "$REPO_FILE"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Only commit if there's a change
+          git add "$REPO_FILE"
+          if git diff --quiet --cached; then
+            echo "No changes to apps.json — nothing to commit/push."
+            exit 0
+          fi
+
+          git commit -m "Update apps.json for ProStore v${VERSION}"
+          echo "Pushing apps.json to ${PAGES_REPO}:main"
+          git push "https://x-access-token:${PAGES_PAT}@github.com/${PAGES_REPO}.git" HEAD:main
+        shell: bash
