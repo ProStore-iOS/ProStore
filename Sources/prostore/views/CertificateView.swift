@@ -1,6 +1,5 @@
 import SwiftUI
 import UniformTypeIdentifiers
-import ZIPFoundation
 
 // Centralized types to avoid conflicts
 struct CertificateFileItem {
@@ -12,30 +11,7 @@ struct CustomCertificate: Identifiable {
     let displayName: String
     let folderName: String
 }
-// MARK: - Release Models
-struct Release: Codable, Identifiable, Equatable, Hashable {
-    let id: Int
-    let name: String
-    let tagName: String
-    let publishedAt: String
-    let assets: [Asset]
-   
-    enum CodingKeys: String, CodingKey {
-        case id, name, tagName = "tag_name", publishedAt = "published_at", assets
-    }
-   
-    var publishedDate: Date {
-        Date()
-    }
-}
-struct Asset: Codable, Hashable, Equatable {
-    let name: String
-    let browserDownloadUrl: String
-   
-    enum CodingKeys: String, CodingKey {
-        case name, browserDownloadUrl = "browser_download_url"
-    }
-}
+
 // MARK: - Date Extension for Formatting
 extension Date {
     func formattedWithOrdinal() -> String {
@@ -47,7 +23,7 @@ extension Date {
         let year = Calendar.current.component(.year, from: self)
         return "\(ordinal) of \(month) \(year)"
     }
-   
+ 
     private func ordinalSuffix(for number: Int) -> String {
         let suffix: String
         let ones = number % 10
@@ -66,301 +42,13 @@ extension Date {
         return "\(number)\(suffix)"
     }
 }
-// MARK: - Official Certificates View
-struct OfficialCertificatesView: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var releases: [Release] = []
-    @State private var selectedRelease: Release? = nil
-    @State private var statusMessage = ""
-    @State private var isChecking = false
-    @State private var isLoadingReleases = true
-    @State private var p12Data: Data? = nil
-    @State private var provData: Data? = nil
-    @State private var password: String? = nil
-    @State private var displayName = ""
-    @State private var expiry: Date? = nil
-   
-    private var isSuccess: Bool {
-        statusMessage.contains("Success")
-    }
-   
-    private var statusColor: Color {
-        if statusMessage.contains("Downloading") {
-            return .yellow
-        } else if isSuccess {
-            return .green
-        } else {
-            return .red
-        }
-    }
-   
-    private let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        return f
-    }()
-   
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Select Official Certificate") {
-                    Picker("Certificate", selection: $selectedRelease) {
-                        if isLoadingReleases {
-                            Text("-- Loading --").tag(nil as Release?)
-                        } else {
-                            Text("-- Select a certificate --").tag(nil as Release?)
-                            ForEach(releases) { release in
-                                Text(cleanName(release.name)).tag(release as Release?)
-                            }
-                        }
-                    }
-                }
-                Section {
-                    Text("Provided by loyahdev")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                if let release = selectedRelease {
-                    Section("Details") {
-                        Text("Tag: \(release.tagName)")
-                        if !statusMessage.isEmpty {
-                            Text(statusMessage)
-                                .foregroundColor(statusColor)
-                        }
-                        Text("Published: \(dateFormatter.string(from: isoDate(string: release.publishedAt)))")
-                        if let exp = expiry {
-                            expiryDisplay(for: exp)
-                        }
-                    }
-                }
-                Section {
-                    Button("Add Certificate") {
-                        addCertificate()
-                    }
-                    .disabled(p12Data == nil || provData == nil || password == nil || isChecking)
-                }
-            }
-            .navigationTitle("Official Certificates")
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationBarItems(leading:
-                Button("×") {
-                    dismiss()
-                }
-            )
-            .onAppear {
-                fetchReleases()
-            }
-            .onChange(of: selectedRelease) { newValue in
-                if newValue != nil && !isChecking {
-                    clearCertificateData()
-                    checkCertificate()
-                } else if newValue == nil {
-                    clearCertificateData()
-                }
-            }
-        }
-    }
-   
-    private func clearCertificateData() {
-        statusMessage = ""
-        expiry = nil
-        p12Data = nil
-        provData = nil
-        password = nil
-        displayName = ""
-    }
-   
-    private func expiryDisplay(for expiry: Date) -> some View {
-        let now = Date()
-        let components = Calendar.current.dateComponents([.day], from: now, to: expiry)
-        let days = components.day ?? 0
-        let displayDate = expiry.formattedWithOrdinal()
-        let expiryText: String
-        let expiryColor: Color
-        if days > 0 {
-            expiryText = "Expires on the \(displayDate)"
-            expiryColor = .green
-        } else {
-            expiryText = "Expired on the \(displayDate)"
-            expiryColor = .red
-        }
-        return Text(expiryText)
-            .foregroundColor(expiryColor)
-            .font(.caption)
-    }
-   
-    private func isoDate(string: String) -> Date {
-        let formatter = ISO8601DateFormatter()
-        return formatter.date(from: string) ?? Date()
-    }
-   
-    private func cleanName(_ name: String) -> String {
-        name.replacingOccurrences(of: "\\\\", with: "").replacingOccurrences(of: "\\", with: "")
-    }
-   
-    private func getPAT() async -> String? {
-        guard let url = URL(string: "https://certapi.loyah.dev/pac") else { return nil }
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        } catch {
-            return nil
-        }
-    }
-   
-    private func fetchReleases() {
-        Task {
-            let pat = await getPAT()
-            let url = URL(string: "https://api.github.com/repos/loyahdev/certificates/releases")!
-            var request = URLRequest(url: url)
-            if let pat = pat {
-                request.setValue("token \(pat)", forHTTPHeaderField: "Authorization")
-            }
-            do {
-                let (data, response) = try await URLSession.shared.data(for: request)
-                var decodeData = data
-                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200, pat != nil {
-                    let fallbackRequest = URLRequest(url: url)
-                    let (fallbackData, _) = try await URLSession.shared.data(for: fallbackRequest)
-                    decodeData = fallbackData
-                }
-                let decoder = JSONDecoder()
-                decoder.dateDecodingStrategy = .deferredToDate
-                let decoded = try decoder.decode([Release].self, from: decodeData)
-                await MainActor.run {
-                    self.releases = decoded.sorted { isoDate(string: $0.publishedAt) > isoDate(string: $1.publishedAt) }
-                    self.isLoadingReleases = false
-                }
-            } catch {
-                await MainActor.run {
-                    self.statusMessage = "Failed to fetch releases: \(error.localizedDescription)"
-                    self.isLoadingReleases = false
-                }
-            }
-        }
-    }
-   
-    private func findCertificateFiles(in directory: URL) throws -> (p12Urls: [URL], provUrls: [URL]) {
-        var p12Urls: [URL] = []
-        var provUrls: [URL] = []
-        if let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants]) {
-            for case let fileURL as URL in enumerator {
-                let path = fileURL.path
-                if !path.contains("__MACOSX") {
-                    if path.hasSuffix(".p12") {
-                        p12Urls.append(fileURL)
-                    } else if path.hasSuffix(".mobileprovision") {
-                        provUrls.append(fileURL)
-                    }
-                }
-            }
-        }
-        return (p12Urls, provUrls)
-    }
-   
-    private func checkCertificate() {
-        guard let release = selectedRelease,
-              let asset = release.assets.first(where: { $0.name.hasSuffix(".zip") }),
-              let downloadUrl = URL(string: asset.browserDownloadUrl) else {
-            statusMessage = "Invalid release"
-            return
-        }
-        isChecking = true
-        statusMessage = "Downloading..."
-        Task {
-            let pat = await getPAT()
-            var downloadRequest = URLRequest(url: downloadUrl)
-            if let pat = pat {
-                downloadRequest.setValue("token \(pat)", forHTTPHeaderField: "Authorization")
-            }
-            do {
-                var tempData = Data()
-                var response = URLResponse()
-                (tempData, response) = try await URLSession.shared.data(for: downloadRequest)
-                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200, pat != nil {
-                    let fallbackRequest = URLRequest(url: downloadUrl)
-                    (tempData, _) = try await URLSession.shared.data(for: fallbackRequest)
-                }
-                let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-                try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true, attributes: nil)
-                defer {
-                    try? FileManager.default.removeItem(at: tempDir)
-                }
-                let zipPath = tempDir.appendingPathComponent("temp.zip")
-                try tempData.write(to: zipPath)
-                let extractDir = tempDir.appendingPathComponent("extracted")
-                try FileManager.default.unzipItem(at: zipPath, to: extractDir, progress: nil)
-                // Find files
-                let (p12Urls, provUrls) = try findCertificateFiles(in: extractDir)
-                guard p12Urls.count == 1, provUrls.count == 1 else {
-                    throw NSError(domain: "Extraction", code: 1, userInfo: [NSLocalizedDescriptionKey: "Unable to extract certificate"])
-                }
-                let p12Url = p12Urls[0]
-                let provUrl = provUrls[0]
-                let p12DataLocal = try Data(contentsOf: p12Url)
-                let provDataLocal = try Data(contentsOf: provUrl)
-                var successPw: String?
-                for pwCandidate in ["Hydrogen", "Sideloadingdotorg", "nocturnacerts"] {
-                    switch CertificatesManager.check(p12Data: p12DataLocal, password: pwCandidate, mobileProvisionData: provDataLocal) {
-                    case .success(.success):
-                        successPw = pwCandidate
-                        break
-                    default:
-                        break
-                    }
-                }
-                guard let pw = successPw else {
-                    throw NSError(domain: "Password", code: 1, userInfo: [NSLocalizedDescriptionKey: "Password check failed"])
-                }
-                let exp = ProStoreTools.getExpirationDate(provData: provDataLocal)
-                let dispName = CertificatesManager.getCertificateName(mobileProvisionData: provDataLocal) ?? cleanName(release.name)
-                await MainActor.run {
-                    self.p12Data = p12DataLocal
-                    self.provData = provDataLocal
-                    self.password = pw
-                    self.displayName = dispName
-                    self.expiry = exp
-                    self.statusMessage = "Success: Ready to add \(dispName)"
-                    self.isChecking = false
-                }
-            } catch {
-                await MainActor.run {
-                    self.statusMessage = "Error: \(error.localizedDescription)"
-                    self.isChecking = false
-                }
-            }
-        }
-    }
-   
-    private func addCertificate() {
-        guard let p12DataLocal = p12Data,
-              let provDataLocal = provData,
-              let pw = password,
-              !displayName.isEmpty else { return }
-        isChecking = true
-        statusMessage = "Adding..."
-        Task {
-            do {
-                _ = try CertificateFileManager.shared.saveCertificate(p12Data: p12DataLocal, provData: provDataLocal, password: pw, displayName: displayName)
-                await MainActor.run {
-                    self.statusMessage = "Added successfully"
-                    self.isChecking = false
-                    self.dismiss()
-                }
-            } catch {
-                await MainActor.run {
-                    self.statusMessage = "Error adding: \(error.localizedDescription)"
-                    self.isChecking = false
-                }
-            }
-        }
-    }
-}
+
 // MARK: - CertificateView (List + Add/Edit launchers)
 struct CertificateView: View {
     @State private var customCertificates: [CustomCertificate] = []
     @State private var certExpiries: [String: Date?] = [:]
     @State private var showAddCertificateSheet = false
+    @State private var showLoyahdevSheet = false
     @State private var showOfficialSheet = false
     @State private var editingCertificate: CustomCertificate? = nil // Used only for edit sheet (.sheet(item:))
     @State private var selectedCert: String? = nil
@@ -385,6 +73,11 @@ struct CertificateView: View {
                     Label("Add from Files", systemImage: "folder.badge.plus")
                 }
                 Button {
+                    showLoyahdevSheet = true
+                } label: {
+                    Label("Add from Loyahdev", systemImage: "globe")
+                }
+                Button {
                     showOfficialSheet = true
                 } label: {
                     Label("Add from Official", systemImage: "globe")
@@ -403,6 +96,13 @@ struct CertificateView: View {
             }
         }) {
             AddCertificateView(onSave: { newlyAddedFolder = $0 })
+                .presentationDetents([.large])
+        }
+        // Loyahdev sheet
+        .sheet(isPresented: $showLoyahdevSheet, onDismiss: {
+            reloadCertificatesAndEnsureSelection()
+        }) {
+            LoyahdevCertificatesView()
                 .presentationDetents([.large])
         }
         // Official sheet
@@ -433,7 +133,7 @@ struct CertificateView: View {
             reloadCertificatesAndEnsureSelection()
         }
     }
-   
+ 
     private func certificateItem(for cert: CustomCertificate) -> some View {
         ZStack(alignment: .top) {
             certificateContent(for: cert)
@@ -452,7 +152,7 @@ struct CertificateView: View {
             certificateButtons(for: cert)
         }
     }
-   
+ 
     private func certificateContent(for cert: CustomCertificate) -> some View {
         VStack(alignment: .center, spacing: 12) {
             Text(cert.displayName)
@@ -477,7 +177,7 @@ struct CertificateView: View {
                 .stroke(selectedCert == cert.folderName ? Color.blue : Color.clear, lineWidth: 3)
         )
     }
-   
+ 
     private func expiryDisplay(for expiry: Date) -> some View {
         let now = Date()
         let components = Calendar.current.dateComponents([.day], from: now, to: expiry)
@@ -495,7 +195,7 @@ struct CertificateView: View {
             .fontWeight(.medium)
             .foregroundColor(.primary)
     }
-   
+ 
     private func certificateBackground(for cert: CustomCertificate) -> Color {
         guard let expiry = certExpiries[cert.folderName], expiry != nil else {
             return Color.clear
@@ -512,7 +212,7 @@ struct CertificateView: View {
             return .green.opacity(0.15)
         }
     }
-   
+ 
     private func certificateButtons(for cert: CustomCertificate) -> some View {
         HStack {
             Button(action: {
@@ -526,9 +226,9 @@ struct CertificateView: View {
                     .background(Color(.systemGray6).opacity(0.8))
                     .clipShape(Circle())
             }
-        
+      
             Spacer()
-        
+      
             Button(action: {
                 if customCertificates.count > 1 {
                     certToDelete = cert
@@ -553,7 +253,7 @@ struct CertificateView: View {
         ensureSelection()
         loadExpiries()
     }
-   
+ 
     private func loadExpiries() {
         for cert in customCertificates {
             let folderName = cert.folderName
@@ -574,7 +274,7 @@ struct CertificateView: View {
     private func deleteCertificate(_ cert: CustomCertificate) {
         try? CertificateFileManager.shared.deleteCertificate(folderName: cert.folderName)
         customCertificates = CertificateFileManager.shared.loadCertificates()
-    
+  
         if selectedCert == cert.folderName {
             if let newSelection = customCertificates.first {
                 selectedCert = newSelection.folderName
@@ -588,6 +288,7 @@ struct CertificateView: View {
         loadExpiries()
     }
 }
+
 // MARK: - Add / Edit View
 struct AddCertificateView: View {
     @Environment(\.dismiss) private var dismiss
@@ -623,7 +324,7 @@ struct AddCertificateView: View {
                         }
                     }
                     .disabled(isChecking)
-                
+              
                     Button(action: { activeSheet = .prov }) {
                         HStack {
                             Image(systemName: "gearshape.fill")
@@ -639,12 +340,12 @@ struct AddCertificateView: View {
                     }
                     .disabled(isChecking)
                 }
-            
+          
                 Section(header: Text("Display Name")) {
                     TextField("Optional Display Name", text: $displayName)
                         .disabled(isChecking)
                 }
-            
+          
                 Section(header: Text("Password")) {
                     SecureField("Enter Password", text: $password)
                         .disabled(isChecking)
@@ -652,7 +353,7 @@ struct AddCertificateView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-            
+          
                 if !errorMessage.isEmpty {
                     Text(errorMessage)
                         .foregroundColor(.red)
@@ -705,10 +406,10 @@ struct AddCertificateView: View {
         let provURL = certFolder.appendingPathComponent("profile.mobileprovision")
         let passwordURL = certFolder.appendingPathComponent("password.txt")
         let nameURL = certFolder.appendingPathComponent("name.txt")
-    
+  
         p12File = CertificateFileItem(name: "certificate.p12", url: p12URL)
         provFile = CertificateFileItem(name: "profile.mobileprovision", url: provURL)
-    
+  
         if let pwData = try? Data(contentsOf: passwordURL), let pw = String(data: pwData, encoding: .utf8) {
             password = pw
         }
@@ -716,13 +417,13 @@ struct AddCertificateView: View {
             displayName = nameStr
         }
     }
-   
+ 
     private func saveCertificate() {
         guard let p12URL = p12File?.url, let provURL = provFile?.url else { return }
-    
+  
         isChecking = true
         errorMessage = ""
-    
+  
         let workItem: DispatchWorkItem = DispatchWorkItem {
             do {
                 var p12Data: Data
@@ -741,16 +442,16 @@ struct AddCertificateView: View {
                     p12Data = try Data(contentsOf: p12URL)
                     provData = try Data(contentsOf: provURL)
                 }
-            
+          
                 let checkResult = CertificatesManager.check(p12Data: p12Data, password: self.password, mobileProvisionData: provData)
                 var dispatchError: String?
-            
+          
                 switch checkResult {
                 case .success(.success):
                     if localDisplayName.isEmpty {
                         localDisplayName = CertificatesManager.getCertificateName(mobileProvisionData: provData) ?? "Custom Certificate"
                     }
-                
+              
                     if let folder = self.editingCertificate?.folderName {
                         try CertificateFileManager.shared.updateCertificate(folderName: folder, p12Data: p12Data, provData: provData, password: self.password, displayName: localDisplayName)
                     } else {
@@ -764,7 +465,7 @@ struct AddCertificateView: View {
                 case .failure(let error):
                     dispatchError = "Error: \(error.localizedDescription)"
                 }
-            
+          
                 DispatchQueue.main.async {
                     self.isChecking = false
                     if let err = dispatchError {
