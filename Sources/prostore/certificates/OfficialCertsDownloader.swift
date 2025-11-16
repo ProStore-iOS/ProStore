@@ -32,7 +32,7 @@ struct TreeResponse: Codable {
     let truncated: Bool?
 }
 
-struct TreeItem: Codable, Identifiable {
+struct TreeItem: Codable, Identifiable, Hashable, Equatable {
     let path: String
     let type: String
     let url: String
@@ -45,37 +45,6 @@ struct TreeItem: Codable, Identifiable {
 // MARK: - Blob Model (for Official)
 struct BlobResponse: Codable {
     let content: String?
-}
-
-// MARK: - Date Extension for Formatting
-extension Date {
-    func formattedWithOrdinal() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM"
-        let month = formatter.string(from: self)
-        let day = Calendar.current.component(.day, from: self)
-        let ordinal = ordinalSuffix(for: day)
-        let year = Calendar.current.component(.year, from: self)
-        return "\(ordinal) of \(month) \(year)"
-    }
- 
-    private func ordinalSuffix(for number: Int) -> String {
-        let suffix: String
-        let ones = number % 10
-        let tens = (number / 10) % 10
-        if tens == 1 {
-            suffix = "th"
-        } else if ones == 1 {
-            suffix = "st"
-        } else if ones == 2 {
-            suffix = "nd"
-        } else if ones == 3 {
-            suffix = "rd"
-        } else {
-            suffix = "th"
-        }
-        return "\(number)\(suffix)"
-    }
 }
 
 // MARK: - Loyahdev Certificates View
@@ -526,8 +495,10 @@ struct OfficialCertificatesView: View {
         statusMessage = "Fetching..."
         Task {
             do {
-                let subUrl = item.url
-                let (subData, _) = try await URLSession.shared.data(from: subUrl)
+                guard let subURL = URL(string: item.url) else {
+                    throw NSError(domain: "URL", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid subdirectory URL"])
+                }
+                let (subData, _) = try await URLSession.shared.data(from: subURL)
                 let decoder = JSONDecoder()
                 let subResponse = try decoder.decode(TreeResponse.self, from: subData)
                 let subTree = subResponse.tree
@@ -537,9 +508,14 @@ struct OfficialCertificatesView: View {
                 guard let p12Blob = p12Item, let provBlob = provItem, let pwBlobItem = pwItem else {
                     throw NSError(domain: "Files", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing required files"])
                 }
-                let p12DataLocal = try await fetchBlobContent(url: p12Blob.url)
-                let provDataLocal = try await fetchBlobContent(url: provBlob.url)
-                let pwData = try await fetchBlobContent(url: pwBlobItem.url)
+                guard let p12URL = URL(string: p12Blob.url),
+                      let provURL = URL(string: provBlob.url),
+                      let pwURL = URL(string: pwBlobItem.url) else {
+                    throw NSError(domain: "URL", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid blob URLs"])
+                }
+                let p12DataLocal = try await fetchBlobContent(url: p12URL)
+                let provDataLocal = try await fetchBlobContent(url: provURL)
+                let pwData = try await fetchBlobContent(url: pwURL)
                 guard let pwString = String(data: pwData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) else {
                     throw NSError(domain: "Password", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid password file"])
                 }
