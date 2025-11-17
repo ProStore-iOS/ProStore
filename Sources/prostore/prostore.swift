@@ -46,6 +46,8 @@ struct MainSidebarView: View {
                         .navigationTitle("ProStore - About")
                         .navigationBarTitleDisplayMode(.large)
                 }
+            case nil:
+                Text("Select a section!")
             }
         }
     }
@@ -56,4 +58,5 @@ enum SidebarItem: Hashable {
     case certificates
     case about
 }
+
 
