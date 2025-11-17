@@ -131,32 +131,30 @@ struct SignerView: View {
             return
         }
         let certDir = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(selectedFolder)
-        do {
-            if let nameData = try? Data(contentsOf: certDir.appendingPathComponent("name.txt")),
-               let name = String(data: nameData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !name.isEmpty {
-                selectedCertificateName = name
-            } else {
-                selectedCertificateName = "Custom Certificate"
-            }
-            let provURL = certDir.appendingPathComponent("profile.mobileprovision")
-            if let expiry = ProStoreTools.getExpirationDate(provURL: provURL) {
-                let now = Date()
-                let components = Calendar.current.dateComponents([.day], from: now, to: expiry)
-                let days = components.day ?? 0
-                switch days {
+        if let nameData = try? Data(contentsOf: certDir.appendingPathComponent("name.txt")),
+            let name = String(data: nameData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !name.isEmpty {
+            selectedCertificateName = name
+        } else {
+            selectedCertificateName = "Custom Certificate"
+        }
+        let provURL = certDir.appendingPathComponent("profile.mobileprovision")
+        if let expiry = ProStoreTools.getExpirationDate(provURL: provURL) {
+            let now = Date()
+            let components = Calendar.current.dateComponents([.day], from: now, to: expiry)
+            let days = components.day ?? 0
+            switch days {
                 case ..<0, 0:
                     expireStatus = "Expired"
                 case 1...30:
                     expireStatus = "Expiring Soon"
                 default:
                     expireStatus = "Valid"
-                }
-            } else {
-                expireStatus = "Unknown"
             }
-            hasSelectedCertificate = true
+        } else {
+            expireStatus = "Unknown"
         }
+        hasSelectedCertificate = true
     }
 
     func runSign() {
@@ -281,3 +279,4 @@ struct SignerView: View {
     }
 
 }
+
