@@ -156,10 +156,6 @@ struct SignerView: View {
                 expireStatus = "Unknown"
             }
             hasSelectedCertificate = true
-        } catch {
-            hasSelectedCertificate = false
-            selectedCertificateName = nil
-            expireStatus = "Unknown"
         }
     }
 
@@ -283,4 +279,5 @@ struct SignerView: View {
         }
         return nil
     }
+
 }
