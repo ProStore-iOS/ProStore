@@ -338,7 +338,7 @@ jobs:
           curl -s https://raw.githubusercontent.com/ProStore-iOS/certificates/refs/heads/main/README.md > readme.md
           
           # Extract signed certificate full names
-          FULL_NAMES=$(grep '| **✅ Signed** |' readme.md | awk -F'|' '{gsub(/^\s+|\s+$/,"",$2); print $2}')
+          FULL_NAMES=$(grep -F '| **✅ Signed** |' readme.md | awk -F'|' '{gsub(/^\s+|\s+$/,"",$2); print $2}')
           
           if [ -z "$FULL_NAMES" ]; then
             echo "No signed certificates found. Skipping signing."
