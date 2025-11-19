@@ -384,6 +384,7 @@ jobs:
           done
       - name: Upload Signed IPAs
         if: always()
+        continue-on-error: true
         run: |
           for ipa in build/com.prostoreios.prostore-signed-*-ios.ipa; do
             if [ -f "$ipa" ]; then
@@ -393,14 +394,13 @@ jobs:
               cp "$ipa" "artifact_dir/${SHORT_NAME}/"
             fi
           done
-        continue-on-error: true
       - name: Upload Artifacts
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: signed-ipas
           path: artifact_dir/**
-          continue-on-error: true
   # create-github-release:
   #   name: Create GitHub Release
   #   needs: [build-unsigned-ipa, sign-ipas]
