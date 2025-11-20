@@ -22,7 +22,7 @@ struct MainSidebarView: View {
                     Label("Certificates", systemImage: "key")
                 }
                 NavigationLink(value: SidebarItem.apps) {
-                    Label("Apps", systemImage: "app.grid.2")
+                    Label("Apps", systemImage: "square.grid.2")
                 }
                 NavigationLink(value: SidebarItem.about) {
                     Label("About", systemImage: "info.circle")
