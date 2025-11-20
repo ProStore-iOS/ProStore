@@ -325,87 +325,87 @@ jobs:
         with:
           name: com.prostoreios.prostore-unsigned-ios.ipa
           path: build
-    - name: Fetch Certificates List and Sign
-      run: |
-        set -euo pipefail
+      - name: Fetch Certificates List and Sign
+        run: |
+          set -euo pipefail
 
-        UNSIGNED_IPA="build/com.prostoreios.prostore-unsigned-ios.ipa"
-        if [ ! -f "$UNSIGNED_IPA" ]; then
-          echo "ERROR: Unsigned IPA not found: $UNSIGNED_IPA"
-          exit 1
-        fi
-
-        # Fetch README.md that lists signed certs
-        curl -s https://raw.githubusercontent.com/ProStore-iOS/certificates/refs/heads/main/README.md > readme.md
-
-        # Extract signed certificate full names (line format in your README)
-        FULL_NAMES=$(grep -F '| **✅ Signed** |' readme.md | awk -F'|' '{gsub(/^\s+|\s+$/,"",$2); print $2}')
-
-        if [ -z "$FULL_NAMES" ]; then
-          echo "No signed certificates found. Skipping signing."
-          exit 0
-        fi
-
-        # Install zsign dependencies
-        brew install pkg-config openssl minizip
-
-        # Build zsign
-        git clone https://github.com/zhlynn/zsign.git
-        cd zsign/build/macos
-        make clean && make
-
-        # Find the built zsign binary (most zsign builds place it in zsign/bin/zsign)
-        cd ../../..
-        ZSIGN_PATH="$(pwd)/zsign/bin/zsign"
-
-        # As a fallback, try to locate if not found
-        if [ ! -x "$ZSIGN_PATH" ]; then
-          echo "Expected binary not found at $ZSIGN_PATH, searching..."
-          FOUND=$(find "$(pwd)/zsign" -type f -name zsign -perm -111 -print -quit || true)
-          if [ -n "$FOUND" ]; then
-            ZSIGN_PATH="$FOUND"
-          else
-            echo "zsign binary not found. Listing zsign tree:"
-            ls -la zsign || true
+          UNSIGNED_IPA="build/com.prostoreios.prostore-unsigned-ios.ipa"
+          if [ ! -f "$UNSIGNED_IPA" ]; then
+            echo "ERROR: Unsigned IPA not found: $UNSIGNED_IPA"
             exit 1
           fi
-        fi
 
-        echo "Using zsign at: $ZSIGN_PATH"
-        ls -l "$ZSIGN_PATH" || true
+          # Fetch README.md that lists signed certs
+          curl -s https://raw.githubusercontent.com/ProStore-iOS/certificates/refs/heads/main/README.md > readme.md
 
-        # Process each cert
-        echo "$FULL_NAMES" | while IFS= read -r FULL_NAME; do
-          if [ -z "$FULL_NAME" ]; then continue; fi
+          # Extract signed certificate full names (line format in your README)
+          FULL_NAMES=$(grep -F '| **✅ Signed** |' readme.md | awk -F'|' '{gsub(/^\s+|\s+$/,"",$2); print $2}')
 
-          # short name used for filenames: sanitize to lowercase alnum and dashes
-          SHORT_NAME=$(echo "$FULL_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g' | sed -E 's/^-+|-+$//g')
+          if [ -z "$FULL_NAMES" ]; then
+            echo "No signed certificates found. Skipping signing."
+            exit 0
+          fi
 
-          # URL-encode the full display name for the GitHub path
-          ENCODED=$(python3 -c "import sys,urllib.parse as u; print(u.quote(sys.stdin.read().strip()))" <<< "$FULL_NAME")
+          # Install zsign dependencies
+          brew install pkg-config openssl minizip
 
-          CERT_DIR="certs/$SHORT_NAME"
-          mkdir -p "$CERT_DIR"
-          pushd "$CERT_DIR" >/dev/null
+          # Build zsign
+          git clone https://github.com/zhlynn/zsign.git
+          cd zsign/build/macos
+          make clean && make
 
-          # download files; if any are missing this will fail, which is likely what you want
-          curl -fLO "https://github.com/ProStore-iOS/certificates/raw/refs/heads/main/${ENCODED}/${ENCODED}.mobileprovision"
-          curl -fLO "https://github.com/ProStore-iOS/certificates/raw/refs/heads/main/${ENCODED}/${ENCODED}.p12"
-          curl -fLO "https://github.com/ProStore-iOS/certificates/raw/refs/heads/main/${ENCODED}/password.txt"
+          # Find the built zsign binary (most zsign builds place it in zsign/bin/zsign)
+          cd ../../..
+          ZSIGN_PATH="$(pwd)/zsign/bin/zsign"
 
-          popd >/dev/null
+          # As a fallback, try to locate if not found
+          if [ ! -x "$ZSIGN_PATH" ]; then
+            echo "Expected binary not found at $ZSIGN_PATH, searching..."
+            FOUND=$(find "$(pwd)/zsign" -type f -name zsign -perm -111 -print -quit || true)
+            if [ -n "$FOUND" ]; then
+              ZSIGN_PATH="$FOUND"
+            else
+              echo "zsign binary not found. Listing zsign tree:"
+              ls -la zsign || true
+              exit 1
+            fi
+          fi
 
-          SIGNED_IPA="build/com.prostoreios.prostore-signed-${SHORT_NAME}-ios.ipa"
+          echo "Using zsign at: $ZSIGN_PATH"
+          ls -l "$ZSIGN_PATH" || true
 
-          # run zsign
-          "$ZSIGN_PATH" -k "${CERT_DIR}/${ENCODED}.p12" \
-                        -p "$(cat "${CERT_DIR}/password.txt")" \
-                        -m "${CERT_DIR}/${ENCODED}.mobileprovision" \
-                        -o "$SIGNED_IPA" \
-                        "$UNSIGNED_IPA"
+          # Process each cert
+          echo "$FULL_NAMES" | while IFS= read -r FULL_NAME; do
+            if [ -z "$FULL_NAME" ]; then continue; fi
 
-          echo "Signed IPA created: $SIGNED_IPA"
-        done
+            # short name used for filenames: sanitize to lowercase alnum and dashes
+            SHORT_NAME=$(echo "$FULL_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g' | sed -E 's/^-+|-+$//g')
+
+            # URL-encode the full display name for the GitHub path
+            ENCODED=$(python3 -c "import sys,urllib.parse as u; print(u.quote(sys.stdin.read().strip()))" <<< "$FULL_NAME")
+
+            CERT_DIR="certs/$SHORT_NAME"
+            mkdir -p "$CERT_DIR"
+            pushd "$CERT_DIR" >/dev/null
+
+            # download files; if any are missing this will fail, which is likely what you want
+            curl -fLO "https://github.com/ProStore-iOS/certificates/raw/refs/heads/main/${ENCODED}/${ENCODED}.mobileprovision"
+            curl -fLO "https://github.com/ProStore-iOS/certificates/raw/refs/heads/main/${ENCODED}/${ENCODED}.p12"
+            curl -fLO "https://github.com/ProStore-iOS/certificates/raw/refs/heads/main/${ENCODED}/password.txt"
+
+            popd >/dev/null
+
+            SIGNED_IPA="build/com.prostoreios.prostore-signed-${SHORT_NAME}-ios.ipa"
+
+            # run zsign
+            "$ZSIGN_PATH" -k "${CERT_DIR}/${ENCODED}.p12" \
+                          -p "$(cat "${CERT_DIR}/password.txt")" \
+                          -m "${CERT_DIR}/${ENCODED}.mobileprovision" \
+                          -o "$SIGNED_IPA" \
+                          "$UNSIGNED_IPA"
+
+            echo "Signed IPA created: $SIGNED_IPA"
+          done
       - name: Upload Artifacts
         if: always()
         continue-on-error: true
