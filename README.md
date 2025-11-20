@@ -32,6 +32,8 @@ Coming soon!
 
 ---
 
+## Star History
+
 <a href="https://www.star-history.com/#ProStore-iOS/ProStore&type=date&legend=top-left">
  <picture>
    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ProStore-iOS/ProStore&type=date&theme=dark&legend=top-left" />
