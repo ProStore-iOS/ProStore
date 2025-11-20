@@ -468,7 +468,7 @@ jobs:
   create-github-release:
   name: Create GitHub Release
   needs: [build-unsigned-ipa, sign-ipas]
-  if: needs.build-unsigned-ipa.outputs.release_exists == 'false'
+  if: needs.build-ipa.outputs.release_exists == 'false'
   runs-on: ubuntu-latest
   steps:
     - name: Install GitHub CLI
