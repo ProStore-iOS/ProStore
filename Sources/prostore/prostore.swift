@@ -45,7 +45,7 @@ struct MainSidebarView: View {
                 }
             case .apps:
                 NavigationStack {
-                    CertificateView()
+                    appsView()
                         .navigationTitle("ProStore - Apps")
                         .navigationBarTitleDisplayMode(.large)
                 }
