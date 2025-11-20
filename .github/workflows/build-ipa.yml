@@ -406,12 +406,7 @@ jobs:
                                  | sed -E 's/[^a-z0-9]+/-/g' | sed -E 's/^-+|-+$//g')
 
                     # URL-encode the full display name for GitHub raw path
-                    ENCODED=$(python3 - <<PY
-import sys, urllib.parse
-s = sys.stdin.read().strip()
-print(urllib.parse.quote(s))
-PY
-                    <<< "$FULL_NAME")
+                    ENCODED=$(printf '%s' "$FULL_NAME" | python3 -c 'import sys,urllib.parse as u; print(u.quote(sys.stdin.read().strip()))')
 
                     CERT_DIR="certs/$SHORT_NAME"
                     mkdir -p "$CERT_DIR"
