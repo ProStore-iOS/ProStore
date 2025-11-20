@@ -4,7 +4,9 @@
 ![Latest Release](https://img.shields.io/github/v/release/ProStore-iOS/ProStore?style=for-the-badge)
 
 The **best** alternative app store for iOS!  
-> ⚠️ ProStore is a WIP and is currently unfinished.  
+
+> ⚠️ ProStore is a WIP and is currently unfinished.
+
 ProStore app source URL: https://prostore-ios.github.io/apps.json
 
 ---
@@ -47,6 +49,7 @@ Coming soon!
 - **[loyahdev](https://github.com/loyahdev/)** - Official ProStore [certificates](https://github.com/loyahdev/certificates) provider!
 
 ---
+
 
 
 
