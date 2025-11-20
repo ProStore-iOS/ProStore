@@ -15,14 +15,14 @@ struct MainSidebarView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $selected) {
+                NavigationLink(value: SidebarItem.apps) {
+                    Label("Apps", systemImage: "square.grid.2x2.fill")
+                }
                 NavigationLink(value: SidebarItem.signer) {
                     Label("Signer", systemImage: "hammer")
                 }
                 NavigationLink(value: SidebarItem.certificates) {
                     Label("Certificates", systemImage: "key")
-                }
-                NavigationLink(value: SidebarItem.apps) {
-                    Label("Apps", systemImage: "square.grid.2x2.fill")
                 }
                 NavigationLink(value: SidebarItem.about) {
                     Label("About", systemImage: "info.circle")
