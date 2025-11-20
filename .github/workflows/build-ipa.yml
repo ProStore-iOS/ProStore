@@ -465,167 +465,139 @@ jobs:
               name: signed-ipas
               path: signed-ipas/*.ipa
 
-  # create-github-release:
-  #   name: Create GitHub Release
-  #   needs: [build-unsigned-ipa, sign-ipas]
-  #   if: needs.build-unsigned-ipa.outputs.release_exists == 'false'
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Install GitHub CLI
-  #       run: |
-  #         # gh (GitHub CLI)
-  #         if ! command -v gh >/dev/null 2>&1; then
-  #           echo "gh not found — attempting official installer script"
-  #           curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-  #           echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-  #           sudo apt update
-  #           sudo apt install gh -y || true
-  #         fi
-  #
-  #         echo "gh: $(gh --version 2>/dev/null || echo 'not installed')"
-  #
-  #     - name: Download All Artifacts
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         path: artifacts
-  #
-  #     - name: Create Release
-  #       env:
-  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #         VERSION: ${{ needs.build-unsigned-ipa.outputs.version }}
-  #         CHANGELOG: ${{ needs.build-unsigned-ipa.outputs.changelog }}
-  #       run: |
-  #         TAG="v$VERSION"
-  #         echo "Creating release $TAG with notes:"
-  #         printf '%s\n' "$CHANGELOG"
-  #         
-  #         # Find all IPAs
-  #         IPAS=$(find artifacts -type f -name '*.ipa' -print0 | xargs -0)
-  #         
-  #         if [ -z "$IPAS" ]; then
-  #           echo "No IPAs found to upload."
-  #           exit 1
-  #         fi
-  #         
-  #         gh release create "$TAG" \
-  #           $IPAS \
-  #           --title "ProStore v$VERSION" \
-  #           --notes "$CHANGELOG" \
-  #           --repo "$GITHUB_REPOSITORY"
-  #       shell: bash
-  #
-  # update-prostore-repo-json:
-  #   name: Update ProStore Repo JSON
-  #   needs: build-unsigned-ipa
-  #   if: needs.build-unsigned-ipa.outputs.release_exists == 'false'
-  #   runs-on: ubuntu-latest
-  #   env:
-  #     VERSION: ${{ needs.build-unsigned-ipa.outputs.version }}
-  #     CHANGELOG: ${{ needs.build-unsigned-ipa.outputs.changelog }}
-  #   steps:
-  #     - name: Install jq
-  #       run: |
-  #         # jq
-  #         if ! command -v jq >/dev/null 2>&1; then
-  #           echo "jq not found — attempting to install"
-  #           sudo apt update
-  #           sudo apt install jq -y || true
-  #         fi
-  #
-  #         echo "jq: $(jq --version 2>/dev/null || echo 'not installed')"
-  #
-  #     - name: Download Device IPA
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         name: com.prostoreios.prostore-unsigned-ios.ipa
-  #         path: build
-  #
-  #     - name: Update Apps JSON in Pages Repo
-  #       env:
-  #         PAGES_PAT: ${{ secrets.PAGES_PAT }}
-  #       run: |
-  #         set -e
-  #         IPA_PATH="$PWD/build/com.prostoreios.prostore-unsigned-ios.ipa"
-  #         DOWNLOAD_URL="https://github.com/ProStore-iOS/ProStore/releases/download/v$VERSION/com.prostoreios.prostore-unsigned-ios.ipa"
-  #
-  #         if [ -f "$IPA_PATH" ]; then
-  #           IPA_SIZE=$(stat -c%s "$IPA_PATH")
-  #           SHA256=$(sha256sum "$IPA_PATH" | awk '{print $1}')
-  #         else
-  #           IPA_SIZE=0
-  #           SHA256=""
-  #         fi
-  #
-  #         VERSION_DATE_ISO=$(date -u +"%Y-%m-%dT%H:%M:%S%z")
-  #         MIN_OS="16.0"
-  #         FULL_DATE=$(date +%Y%m%d%H%M%S)
-  #
-  #         ICON_URL="https://raw.githubusercontent.com/ProStore-iOS/ProStore-iOS.github.io/refs/heads/main/ProStore_icon.png"
-  #         BUNDLE="com.prostoreios.prostore"
-  #         META_DESC="The BEST alternative app store for iOS!"
-  #         DEVNAME="ProStore iOS"
-  #         SCREENSHOTS='["https://raw.githubusercontent.com/ProStore-iOS/ProStore/refs/heads/main/gallery/Screenshot1.png","https://raw.githubusercontent.com/ProStore-iOS/ProStore/refs/heads/main/gallery/Screenshot2.png","https://raw.githubusercontent.com/ProStore-iOS/ProStore/refs/heads/main/gallery/Screenshot3.png","https://raw.githubusercontent.com/ProStore-iOS/ProStore/refs/heads/main/gallery/Screenshot4.png","https://raw.githubusercontent.com/ProStore-iOS/ProStore/refs/heads/main/gallery/Screenshot5.png"]'
-  #
-  #         PAGES_REPO="ProStore-iOS/ProStore-iOS.github.io"
-  #         PAGES_DIR=$(mktemp -d)
-  #
-  #         echo "Cloning pages repo (masked token)..."
-  #         git clone --depth 1 "https://x-access-token:${PAGES_PAT}@github.com/${PAGES_REPO}.git" "$PAGES_DIR"
-  #
-  #         cd "$PAGES_DIR"
-  #         REPO_FILE="apps.json"
-  #
-  #         # Create base repo JSON if missing (first run only)
-  #         if [ ! -f "$REPO_FILE" ]; then
-  #           jq -n --arg icon "$ICON_URL" '{
-  #             name: "Official ProStore Repo",
-  #             identifier: "com.prostoreios.prostore.repo",
-  #             sourceURL: "https://ProStore-iOS.github.io/apps.json",
-  #             iconURL: $icon,
-  #             website: "https://ProStore-iOS.github.io",
-  #             subtitle: "The BEST alternative app store for iOS!",
-  #             apps: []
-  #           }' > "$REPO_FILE"
-  #         fi
-  #
-  #         TMP=$(mktemp)
-  #
-  #         # Build the JSON representation of the new version (on one line to avoid parser issues)
-  #         NEW_VERSION=$(jq -c -n \
-  #           --arg version "$VERSION" \
-  #           --arg date "$VERSION_DATE_ISO" \
-  #           --arg desc "$CHANGELOG" \
-  #           --arg url "$DOWNLOAD_URL" \
-  #           --arg sha "$SHA256" \
-  #           --arg minos "$MIN_OS" \
-  #           --arg fulldate "$FULL_DATE" \
-  #           --argjson size "$IPA_SIZE" \
-  #           '{version: $version, date: $date, localizedDescription: $desc, downloadURL: $url, size: $size, sha256: $sha, minOSVersion: $minos, fullDate: $fulldate}')
-  #
-  #         # Single-line jq filter (YAML-friendly, with .apps //= [] for robustness)
-  #         JQ_QUERY='(.apps //= []) | if ( .apps | map(.bundleIdentifier // .bundleID) | index($bundle) ) then .apps |= map( if ((.bundleIdentifier // .bundleID) == $bundle) then ( { "name": $name, "bundleIdentifier": $bundle, "developerName": $dev, "localizedDescription": $appdesc, "iconURL": $icon, "screenshotURLs": $screenshots } + { "versions": ( [ $newVer ] + ( .versions // [] ) ) } ) else . end ) else .apps += [ { "name": $name, "bundleIdentifier": $bundle, "developerName": $dev, "localizedDescription": $appdesc, "iconURL": $icon, "screenshotURLs": $screenshots, "versions": [ $newVer ] } ] end'
-  #
-  #         # Update or create the app entry (pass screenshots as argjson directly)
-  #         jq --argjson newVer "$NEW_VERSION" \
-  #           --arg name "ProStore" \
-  #           --arg bundle "$BUNDLE" \
-  #           --arg dev "$DEVNAME" \
-  #           --arg appdesc "$META_DESC" \
-  #           --arg icon "$ICON_URL" \
-  #           --argjson screenshots "$SCREENSHOTS" \
-  #           "$JQ_QUERY" "$REPO_FILE" > "$TMP" && mv "$TMP" "$REPO_FILE"
-  #
-  #         git config user.name "github-actions[bot]"
-  #         git config user.email "github-actions[bot]@users.noreply.github.com"
-  #
-  #         # Only commit if there's a change
-  #         git add "$REPO_FILE"
-  #         if git diff --quiet --cached; then
-  #           echo "No changes to apps.json — nothing to commit/push."
-  #           exit 0
-  #         fi
-  #
-  #         git commit -m "Update apps.json for ProStore v${VERSION}"
-  #         echo "Pushing apps.json to ${PAGES_REPO}:main"
-  #         git push "https://x-access-token:${PAGES_PAT}@github.com/${PAGES_REPO}.git" HEAD:main
-  #       shell: bash
+  create-github-release:
+  name: Create GitHub Release
+  needs: [build-unsigned-ipa, sign-ipas]
+  if: needs.build-unsigned-ipa.outputs.release_exists == 'false'
+  runs-on: ubuntu-latest
+  steps:
+    - name: Install GitHub CLI
+      run: |
+        if ! command -v gh >/dev/null 2>&1; then
+          echo "gh not found — attempting official installer script"
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update
+          sudo apt install gh -y || true
+        fi
+        echo "gh: $(gh --version 2>/dev/null || echo 'not installed')"
+
+    - name: Download All Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Create Release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        VERSION: ${{ needs.build-unsigned-ipa.outputs.version }}
+        CHANGELOG: ${{ needs.build-unsigned-ipa.outputs.changelog }}
+      run: |
+        TAG="v$VERSION"
+        echo "Creating release $TAG with notes:"
+        printf '%s\n' "$CHANGELOG"
+        IPAS=$(find artifacts -type f -name '*.ipa' -print0 | xargs -0)
+        if [ -z "$IPAS" ]; then
+          echo "No IPAs found to upload."
+          exit 1
+        fi
+        gh release create "$TAG" \
+          $IPAS \
+          --title "ProStore v$VERSION" \
+          --notes "$CHANGELOG" \
+          --repo "$GITHUB_REPOSITORY"
+      shell: bash
+
+update-prostore-repo-json:
+  name: Update ProStore Repo JSON
+  needs: build-unsigned-ipa
+  if: needs.build-unsigned-ipa.outputs.release_exists == 'false'
+  runs-on: ubuntu-latest
+  env:
+    VERSION: ${{ needs.build-unsigned-ipa.outputs.version }}
+    CHANGELOG: ${{ needs.build-unsigned-ipa.outputs.changelog }}
+  steps:
+    - name: Install jq
+      run: |
+        if ! command -v jq >/dev/null 2>&1; then
+          echo "jq not found — attempting to install"
+          sudo apt update
+          sudo apt install jq -y || true
+        fi
+        echo "jq: $(jq --version 2>/dev/null || echo 'not installed')"
+
+    - name: Download Device IPA
+      uses: actions/download-artifact@v4
+      with:
+        name: com.prostoreios.prostore-unsigned-ios.ipa
+        path: build
+
+    - name: Update Apps JSON in Pages Repo
+      env:
+        PAGES_PAT: ${{ secrets.PAGES_PAT }}
+      run: |
+        set -e
+        IPA_PATH="$PWD/build/com.prostoreios.prostore-unsigned-ios.ipa"
+        DOWNLOAD_URL="https://github.com/ProStore-iOS/ProStore/releases/download/v$VERSION/com.prostoreios.prostore-unsigned-ios.ipa"
+        if [ -f "$IPA_PATH" ]; then
+          IPA_SIZE=$(stat -c%s "$IPA_PATH")
+          SHA256=$(sha256sum "$IPA_PATH" | awk '{print $1}')
+        else
+          IPA_SIZE=0
+          SHA256=""
+        fi
+        VERSION_DATE_ISO=$(date -u +"%Y-%m-%dT%H:%M:%S%z")
+        MIN_OS="16.0"
+        FULL_DATE=$(date +%Y%m%d%H%M%S)
+        ICON_URL="https://raw.githubusercontent.com/ProStore-iOS/ProStore-iOS.github.io/refs/heads/main/ProStore_icon.png"
+        BUNDLE="com.prostoreios.prostore"
+        META_DESC="The BEST alternative app store for iOS!"
+        DEVNAME="ProStore iOS"
+        SCREENSHOTS='["https://raw.githubusercontent.com/ProStore-iOS/ProStore/refs/heads/main/gallery/Screenshot1.png","https://raw.githubusercontent.com/ProStore-iOS/ProStore/refs/heads/main/gallery/Screenshot2.png","https://raw.githubusercontent.com/ProStore-iOS/ProStore/refs/heads/main/gallery/Screenshot3.png","https://raw.githubusercontent.com/ProStore-iOS/ProStore/refs/heads/main/gallery/Screenshot4.png","https://raw.githubusercontent.com/ProStore-iOS/ProStore/refs/heads/main/gallery/Screenshot5.png"]'
+        PAGES_REPO="ProStore-iOS/ProStore-iOS.github.io"
+        PAGES_DIR=$(mktemp -d)
+        git clone --depth 1 "https://x-access-token:${PAGES_PAT}@github.com/${PAGES_REPO}.git" "$PAGES_DIR"
+        cd "$PAGES_DIR"
+        REPO_FILE="apps.json"
+        if [ ! -f "$REPO_FILE" ]; then
+          jq -n --arg icon "$ICON_URL" '{
+            name: "Official ProStore Repo",
+            identifier: "com.prostoreios.prostore.repo",
+            sourceURL: "https://ProStore-iOS.github.io/apps.json",
+            iconURL: $icon,
+            website: "https://ProStore-iOS.github.io",
+            subtitle: "The BEST alternative app store for iOS!",
+            apps: []
+          }' > "$REPO_FILE"
+        fi
+        TMP=$(mktemp)
+        NEW_VERSION=$(jq -c -n \
+          --arg version "$VERSION" \
+          --arg date "$VERSION_DATE_ISO" \
+          --arg desc "$CHANGELOG" \
+          --arg url "$DOWNLOAD_URL" \
+          --arg sha "$SHA256" \
+          --arg minos "$MIN_OS" \
+          --arg fulldate "$FULL_DATE" \
+          --argjson size "$IPA_SIZE" \
+          '{version: $version, date: $date, localizedDescription: $desc, downloadURL: $url, size: $size, sha256: $sha, minOSVersion: $minos, fullDate: $fulldate}')
+        JQ_QUERY='(.apps //= []) | if ( .apps | map(.bundleIdentifier // .bundleID) | index($bundle) ) then .apps |= map( if ((.bundleIdentifier // .bundleID) == $bundle) then ( { "name": $name, "bundleIdentifier": $bundle, "developerName": $dev, "localizedDescription": $appdesc, "iconURL": $icon, "screenshotURLs": $screenshots } + { "versions": ( [ $newVer ] + ( .versions // [] ) ) } ) else . end ) else .apps += [ { "name": $name, "bundleIdentifier": $bundle, "developerName": $dev, "localizedDescription": $appdesc, "iconURL": $icon, "screenshotURLs": $screenshots, "versions": [ $newVer ] } ] end'
+        jq --argjson newVer "$NEW_VERSION" \
+          --arg name "ProStore" \
+          --arg bundle "$BUNDLE" \
+          --arg dev "$DEVNAME" \
+          --arg appdesc "$META_DESC" \
+          --arg icon "$ICON_URL" \
+          --argjson screenshots "$SCREENSHOTS" \
+          "$JQ_QUERY" "$REPO_FILE" > "$TMP" && mv "$TMP" "$REPO_FILE"
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add "$REPO_FILE"
+        if git diff --quiet --cached; then
+          echo "No changes to apps.json — nothing to commit/push."
+          exit 0
+        fi
+        git commit -m "Update apps.json for ProStore v${VERSION}"
+        echo "Pushing apps.json to ${PAGES_REPO}:main"
+        git push "https://x-access-token:${PAGES_PAT}@github.com/${PAGES_REPO}.git" HEAD:main
+      shell: bash
