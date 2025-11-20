@@ -335,33 +335,43 @@ jobs:
                     exit 1
               fi
 
-              # Fetch README.md
-              curl -s https://raw.githubusercontent.com/ProStore-iOS/certificates/refs/heads/main/README.md > readme.md
+              # Fetch README.md containing the certificates table
+              curl -s https://raw.githubusercontent.com/ProStore-iOS/certificates/refs/heads/main/README.md -o readme.md
 
               echo "----- README excerpt -----"
               sed -n '1,200p' readme.md || true
 
-              echo "----- Matching lines -----"
-              grep -nF '| **✅ Signed** |' readme.md || true
+              echo "----- Matching lines (table rows) -----"
+              # Print all data rows from the Markdown table:
+              # lines that start with '|' but skip the alignment row and header row containing 'Company'
+              awk -F'|' '/^\|/ && $2 !~ /Company/ && $2 !~ /^:/{ name=$2; gsub(/^[ \t]+|[ \t]+$/,"",name); print "      " $0 }' readme.md || true
 
-              # Count matches
-              MATCH_COUNT=$(grep -F '| **✅ Signed** |' readme.md | wc -l || true)
-              echo "Found $MATCH_COUNT matching line(s)."
+              # Extract company/display names (field 2) from every table data row (skip header & alignment)
+              # This produces one company/display name per line.
+              awk -F'|' '/^\|/ && $2 !~ /Company/ && $2 !~ /^:/{ name=$2; gsub(/^[ \t]+|[ \t]+$/,"",name); print name }' readme.md > cert-names.txt || true
+
+              MATCH_COUNT=0
+              if [ -f cert-names.txt ]; then
+                    MATCH_COUNT=$(wc -l < cert-names.txt | tr -d ' ')
+              fi
+              echo "Found $MATCH_COUNT certificate line(s) in README."
+
               if [ "$MATCH_COUNT" -eq 0 ]; then
-                    echo "No signed certs found. Exiting."
+                    echo "No certificate rows found. Exiting."
                     exit 0
               fi
 
-              # Install dependencies
+              # Install dependencies (no-op if already installed)
               brew install pkg-config openssl minizip
 
               # Build zsign
+              rm -rf zsign || true
               git clone https://github.com/zhlynn/zsign.git
               pushd zsign/build/macos >/dev/null
               make clean && make
               popd >/dev/null
 
-              # Locate the zsign binary
+              # Locate the zsign binary (expected at zsign/bin/zsign)
               ZSIGN_PATH="$(pwd)/zsign/bin/zsign"
               if [ ! -x "$ZSIGN_PATH" ]; then
                     echo "zsign not found at expected path $ZSIGN_PATH; searching..."
@@ -377,52 +387,83 @@ jobs:
               echo "Using zsign: $ZSIGN_PATH"
               ls -l "$ZSIGN_PATH" || true
 
-              # Output dir to upload later
+              # Prepare output directory for signed IPAs
               SIGNED_DIR="signed-ipas"
               mkdir -p "$SIGNED_DIR"
 
-              # Extract all '✅ Signed' names using awk (no backslash line-continuations)
-              awk -F'|' '/✅ Signed/ { gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2 }' readme.md \
-                | while IFS= read -r FULL_NAME; do
+              # Iterate over every certificate name (one per line) and attempt to sign
+              while IFS= read -r FULL_NAME || [ -n "$FULL_NAME" ]; do
+                    # skip empty lines
                     if [ -z "${FULL_NAME// /}" ]; then
-                          echo "Skipping empty name"
+                          echo "Skipping empty certificate name"
                           continue
                     fi
 
                     echo "---- Processing: '$FULL_NAME' ----"
 
-                    # sanitized short name for filenames/dirs
+                    # Create safe short name for filenames and dirs
                     SHORT_NAME=$(echo "$FULL_NAME" | tr '[:upper:]' '[:lower:]' \
                                  | sed -E 's/[^a-z0-9]+/-/g' | sed -E 's/^-+|-+$//g')
 
-                    # url-encode the full display name for the GitHub path
-                    ENCODED=$(python3 -c "import sys,urllib.parse as u; print(u.quote(sys.stdin.read().strip()))" <<< "$FULL_NAME")
+                    # URL-encode the full display name for GitHub raw path
+                    ENCODED=$(python3 - <<PY
+import sys, urllib.parse
+s = sys.stdin.read().strip()
+print(urllib.parse.quote(s))
+PY
+                    <<< "$FULL_NAME")
 
                     CERT_DIR="certs/$SHORT_NAME"
                     mkdir -p "$CERT_DIR"
                     pushd "$CERT_DIR" >/dev/null
 
-                    # download cert files; -f makes curl fail the step if missing
-                    curl -fLO "https://github.com/ProStore-iOS/certificates/raw/refs/heads/main/${ENCODED}/${ENCODED}.mobileprovision"
-                    curl -fLO "https://github.com/ProStore-iOS/certificates/raw/refs/heads/main/${ENCODED}/${ENCODED}.p12"
-                    curl -fLO "https://github.com/ProStore-iOS/certificates/raw/refs/heads/main/${ENCODED}/password.txt"
+                    # Try downloading the three required files. If any are missing, skip this cert.
+                    echo "Downloading assets for '$FULL_NAME' (encoded: $ENCODED)..."
+                    if ! curl -sS -fLO "https://github.com/ProStore-iOS/certificates/raw/refs/heads/main/${ENCODED}/${ENCODED}.mobileprovision"; then
+                          echo "  -> Missing mobileprovision for '$FULL_NAME', skipping."
+                          popd >/dev/null
+                          continue
+                    fi
+                    if ! curl -sS -fLO "https://github.com/ProStore-iOS/certificates/raw/refs/heads/main/${ENCODED}/${ENCODED}.p12"; then
+                          echo "  -> Missing .p12 for '$FULL_NAME', skipping."
+                          popd >/dev/null
+                          continue
+                    fi
+                    if ! curl -sS -fLO "https://github.com/ProStore-iOS/certificates/raw/refs/heads/main/${ENCODED}/password.txt"; then
+                          echo "  -> Missing password.txt for '$FULL_NAME', skipping."
+                          popd >/dev/null
+                          continue
+                    fi
 
                     popd >/dev/null
 
                     SIGNED_IPA="${SIGNED_DIR}/com.prostoreios.prostore-signed-${SHORT_NAME}-ios.ipa"
 
-                    # run zsign
-                    "$ZSIGN_PATH" -k "${CERT_DIR}/${ENCODED}.p12" \
-                                  -p "$(cat "${CERT_DIR}/password.txt")" \
-                                  -m "${CERT_DIR}/${ENCODED}.mobileprovision" \
-                                  -o "$SIGNED_IPA" \
-                                  "$UNSIGNED_IPA"
+                    # Run zsign; ensure p12 password is read safely
+                    P12_PASS="$(cat "${CERT_DIR}/password.txt" || echo "")"
+                    if [ -z "$P12_PASS" ]; then
+                          echo "  -> Empty password for ${FULL_NAME}, skipping."
+                          continue
+                    fi
 
-                    echo "Signed IPA created: $SIGNED_IPA"
-              done
+                    echo "  -> Signing into $SIGNED_IPA ..."
+                    if "$ZSIGN_PATH" -k "${CERT_DIR}/${ENCODED}.p12" \
+                                    -p "$P12_PASS" \
+                                    -m "${CERT_DIR}/${ENCODED}.mobileprovision" \
+                                    -o "$SIGNED_IPA" \
+                                    "$UNSIGNED_IPA"; then
+                          echo "  -> Signed OK: $SIGNED_IPA"
+                    else
+                          echo "  -> zsign failed for $FULL_NAME; see zsign output above. Skipping."
+                          # don't exit whole job; continue with next cert
+                          continue
+                    fi
+
+              done < cert-names.txt
 
               echo "Signing complete. Signed files:"
               ls -la "$SIGNED_DIR" || true
+
       - name: Upload signed IPAs
         uses: actions/upload-artifact@v4
         with:
