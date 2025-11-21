@@ -13,6 +13,7 @@ ProStore app source URL: https://prostore-ios.github.io/apps.json
 
 ## Install ProStore
 
+- <a href="https://prostore.free.nf">**DIRECT INSTALL**</a><br><br>
 - <a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=altstore">Add to AltStore</a>  
 - <a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=sidestore">Add to SideStore</a>  
 - <a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=esign">Add to ESign</a>  
@@ -51,6 +52,7 @@ Coming soon!
 - **[loyahdev](https://github.com/loyahdev/)** - Official ProStore [certificates](https://github.com/loyahdev/certificates) provider!
 
 ---
+
 
 
 
