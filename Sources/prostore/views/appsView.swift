@@ -209,7 +209,7 @@ private struct AppRowView: View {
 }
 
 // MARK: - Simple Detail View
-private struct AppsView: View {
+private struct AppDetailView: View {
     let app: AltApp
     @Environment(\.openURL) private var openURL
     
@@ -292,4 +292,5 @@ private struct AppsView: View {
         .navigationTitle(app.name)
         .navigationBarTitleDisplayMode(.inline)
     }
+
 }
