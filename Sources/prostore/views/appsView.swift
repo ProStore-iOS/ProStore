@@ -1,6 +1,7 @@
 import SwiftUI
+import Combine
 
-// MARK: - Models (AltStore-ish)
+// MARK: - Models (decodable for AltStore source format)
 struct AltSource: Decodable {
     let name: String?
     let subtitle: String?
@@ -9,15 +10,16 @@ struct AltSource: Decodable {
 }
 
 struct AltApp: Decodable, Identifiable {
+    // Use bundleIdentifier as stable id
     var id: String { bundleIdentifier }
     let name: String
     let bundleIdentifier: String
     let developerName: String?
     let subtitle: String?
     let iconURL: URL?
-    let localizedDescription: String?
     let versions: [AppVersion]?
     
+    // A convenience computed property for a primary download URL (if present on the latest version)
     var latestDownloadURL: URL? {
         versions?.first?.downloadURL
     }
@@ -47,6 +49,7 @@ final class RepoViewModel: ObservableObject {
         Task { await load() }
     }
     
+    /// Load JSON and decode apps. Tries both `{ "apps": [...] }` and direct `[App]` shapes.
     func load() async {
         isLoading = true
         errorMessage = nil
@@ -54,47 +57,57 @@ final class RepoViewModel: ObservableObject {
         
         do {
             var request = URLRequest(url: sourceURL)
-            request.setValue("ProStore/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
+            // Some repos expect a GET; set a reasonable user-agent
+            request.setValue("AppTestersListView/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
+            
             let (data, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
                 throw NSError(domain: "RepoFetcher", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode)"])
             }
             
             let decoder = JSONDecoder()
-            // try common shapes
+            // First try decoding top-level AltSource (common altstore format)
             if let source = try? decoder.decode(AltSource.self, from: data), let apps = source.apps {
                 self.apps = apps
                 return
             }
+            
+            // Fallback: some repos publish a raw array of apps
             if let appsArray = try? decoder.decode([AltApp].self, from: data) {
                 self.apps = appsArray
                 return
             }
-            // fallbacks: try extracting "apps" key manually
-            if let jsonObject = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let appsFragment = jsonObject["apps"] {
-                let fragmentData = try JSONSerialization.data(withJSONObject: appsFragment)
-                let appsArray = try decoder.decode([AltApp].self, from: fragmentData)
-                self.apps = appsArray
-                return
+            
+            // Another fallback: some repos wrap apps in a top-level dictionary under other keys
+            if let jsonObject = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                // try to extract "apps" key and re-decode that fragment
+                if let appsFragment = jsonObject["apps"] {
+                    let fragmentData = try JSONSerialization.data(withJSONObject: appsFragment)
+                    let appsArray = try decoder.decode([AltApp].self, from: fragmentData)
+                    self.apps = appsArray
+                    return
+                }
             }
-            throw NSError(domain: "RepoFetcher", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unexpected JSON format"])
+            
+            throw NSError(domain: "RepoFetcher", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unexpected JSON format."])
+            
         } catch {
-            self.errorMessage = "Failed to load: \(error.localizedDescription)"
+            self.errorMessage = "Failed to load repository: \(error.localizedDescription)"
             self.apps = []
         }
     }
     
+    /// Public method to refresh on demand
     func refresh() {
         Task { await load() }
     }
 }
 
-// MARK: - AppsView (no NavigationView)
+// MARK: - The SwiftUI View (no NavigationView wrapper)
 public struct AppsView: View {
     @StateObject private var vm: RepoViewModel
     
-    /// Provide custom repo URL if you want (defaults to https://repository.apptesters.org/)
+    // Public initializer so you can pass a custom repository URL (defaults to user's provided URL)
     public init(repoURL: URL = URL(string: "https://repository.apptesters.org/")!) {
         _vm = StateObject(wrappedValue: RepoViewModel(sourceURL: repoURL))
     }
@@ -123,20 +136,21 @@ public struct AppsView: View {
                 .padding()
             } else {
                 List(vm.apps) { app in
-                    // parent NavigationStack handles navigation; provide a NavigationLink to a detail view
-                    NavigationLink(value: app) {
-                        AppRowView(app: app)
-                    }
+                    AppRowView(app: app)
                 }
-                .listStyle(.plain)
-                .refreshable { vm.refresh() } // iOS 15+
-                // If you don't want navigation links, swap NavigationLink -> Button/openURL as you prefer.
-                .navigationDestination(for: AltApp.self) { app in
-                    AppDetailView(app: app)
-                }
+                .listStyle(PlainListStyle())
+                .refreshable { vm.refresh() }
             }
         }
-        // Do not set navigationTitle here — your parent already does that
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: { vm.refresh() }) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .help("Refresh repository")
+            }
+        }
+        .padding(.horizontal, 0)
     }
 }
 
@@ -153,10 +167,11 @@ private struct AppRowView: View {
                         ProgressView()
                             .frame(width: 48, height: 48)
                     case .success(let image):
-                        image.resizable()
+                        image
+                            .resizable()
                             .scaledToFill()
                             .frame(width: 48, height: 48)
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                             .shadow(radius: 1, y: 1)
                     case .failure:
                         Image(systemName: "app")
@@ -206,91 +221,4 @@ private struct AppRowView: View {
         }
         .padding(.vertical, 6)
     }
-}
-
-// MARK: - Simple Detail View
-private struct AppDetailView: View {
-    let app: AltApp
-    @Environment(\.openURL) private var openURL
-    
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                if let iconURL = app.iconURL {
-                    AsyncImage(url: iconURL) { phase in
-                        switch phase {
-                        case .empty:
-                            ProgressView()
-                                .frame(width: 120, height: 120)
-                        case .success(let image):
-                            image.resizable()
-                                .scaledToFit()
-                                .frame(width: 120, height: 120)
-                                .clipShape(RoundedRectangle(cornerRadius: 16))
-                        default:
-                            Image(systemName: "app")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 100, height: 100)
-                        }
-                    }
-                }
-                
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(app.name)
-                        .font(.title2)
-                        .bold()
-                    if let dev = app.developerName {
-                        Text(dev)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    if let desc = app.localizedDescription {
-                        Text(desc)
-                            .font(.body)
-                            .padding(.top, 6)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-                
-                if let version = app.versions?.first {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Latest")
-                            .font(.headline)
-                        HStack {
-                            VStack(alignment: .leading) {
-                                if let v = version.version { Text("Version: \(v)") }
-                                if let b = version.buildVersion { Text("Build: \(b)") }
-                                if let min = version.minOSVersion { Text("Min iOS: \(min)") }
-                                if let size = version.size {
-                                    Text("Size: \(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))")
-                                }
-                            }
-                            Spacer()
-                        }
-                    }
-                    .padding()
-                    .background(.thinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .padding(.horizontal)
-                }
-                
-                if let url = app.latestDownloadURL {
-                    Button(action: { openURL(url) }) {
-                        Label("Open download URL", systemImage: "arrow.down.doc")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.horizontal)
-                }
-                
-                Spacer(minLength: 20)
-            }
-            .padding(.top)
-        }
-        .navigationTitle(app.name)
-        .navigationBarTitleDisplayMode(.inline)
-    }
-
 }
