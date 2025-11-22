@@ -11,12 +11,11 @@ struct AltSource: Decodable {
 
 struct AppVersion: Decodable {
     let version: String?
-    let buildVersion: String?
     let date: String?
     let downloadURL: URL?
     let size: Int?
     let minOSVersion: String?
-    let maxOSVersion: String?
+    let localizedDescription: String?
 }
 
 struct AltApp: Decodable, Identifiable {
@@ -26,11 +25,8 @@ struct AltApp: Decodable, Identifiable {
     let developerName: String?
     let subtitle: String?
     let iconURL: URL?
+    let localizedDescription: String?
     let versions: [AppVersion]?
-    
-    var latestDownloadURL: URL? {
-        versions?.first?.downloadURL
-    }
 }
 
 // MARK: - ViewModel
@@ -97,9 +93,9 @@ final class RepoViewModel: ObservableObject {
 // MARK: - AppsView
 public struct AppsView: View {
     @StateObject private var vm: RepoViewModel
-    
     @State private var searchText: String = ""
     @FocusState private var searchFieldFocused: Bool
+    @State private var selectedApp: AltApp? = nil
     
     public init(repoURL: URL = URL(string: "https://repository.apptesters.org/")!) {
         _vm = StateObject(wrappedValue: RepoViewModel(sourceURL: repoURL))
@@ -168,13 +164,21 @@ public struct AppsView: View {
                     .padding()
                 } else {
                     List(filteredApps) { app in
-                        AppRowView(app: app)
+                        Button {
+                            selectedApp = app
+                        } label: {
+                            AppRowView(app: app)
+                        }
+                        .buttonStyle(.plain)
                     }
                     .listStyle(PlainListStyle())
                     .refreshable { vm.refresh() }
                 }
             }
             .padding(.top, 8)
+        }
+        .sheet(item: $selectedApp) { app in
+            AppDetailView(app: app)
         }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -205,13 +209,6 @@ private struct AppRowView: View {
                             .scaledToFill()
                             .frame(width: 48, height: 48)
                             .clipShape(RoundedRectangle(cornerRadius: 10))
-                            .shadow(radius: 1, y: 1)
-                            .onAppear {
-                                let renderer = ImageRenderer(content: image)
-                                if let uiImage = renderer.uiImage {
-                                    ImageCache.shared.set(uiImage, for: iconURL)
-                                }
-                            }
                     case .failure:
                         Image(systemName: "app")
                             .resizable()
@@ -259,5 +256,135 @@ private struct AppRowView: View {
             }
         }
         .padding(.vertical, 6)
+    }
+}
+
+// MARK: - AppDetailView
+private struct AppDetailView: View {
+    let app: AltApp
+    
+    private var latestVersion: AppVersion? {
+        app.versions?.first
+    }
+    
+    private func formatSize(_ size: Int?) -> String {
+        guard let size = size else { return "Unknown" }
+        return ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
+    }
+    
+    private func formatDate(_ dateString: String?) -> String {
+        guard let dateString = dateString, let date = ISO8601DateFormatter().date(from: dateString) else {
+            return "Unknown"
+        }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
+    }
+    
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 16) {
+                    if let iconURL = app.iconURL {
+                        AsyncImage(url: iconURL) { phase in
+                            switch phase {
+                            case .empty:
+                                ProgressView()
+                                    .frame(width: 80, height: 80)
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 80, height: 80)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                            case .failure:
+                                Image(systemName: "app")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 60, height: 60)
+                                    .foregroundColor(.secondary)
+                            @unknown default:
+                                EmptyView()
+                            }
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(app.name)
+                            .font(.title2)
+                            .bold()
+                        if let dev = app.developerName {
+                            Text(dev)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        Text(app.bundleIdentifier)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                if let generalDesc = app.localizedDescription, generalDesc != latestVersion?.localizedDescription {
+                    Text(generalDesc)
+                }
+                
+                if let latest = latestVersion, latest.localizedDescription != nil, latest.localizedDescription != app.localizedDescription {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("What's New?")
+                            .font(.headline)
+                        Text(latest.localizedDescription!)
+                    }
+                }
+                
+                if let latest = latestVersion {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Version:")
+                                .bold()
+                            Text(latest.version ?? "Unknown")
+                        }
+                        HStack {
+                            Text("Released:")
+                                .bold()
+                            Text(formatDate(latest.date))
+                        }
+                        HStack {
+                            Text("Size:")
+                                .bold()
+                            Text(formatSize(latest.size))
+                        }
+                        HStack {
+                            Text("Min OS:")
+                                .bold()
+                            Text(latest.minOSVersion ?? "Unknown")
+                        }
+                    }
+                }
+                
+                if let screenshots = latestVersion?.downloadURL != nil ? [] : nil, !screenshots!.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack {
+                            ForEach(screenshots!, id: \.self) { url in
+                                AsyncImage(url: url) { phase in
+                                    switch phase {
+                                    case .empty: ProgressView()
+                                    case .success(let image):
+                                        image
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(height: 200)
+                                            .cornerRadius(10)
+                                    case .failure: Image(systemName: "photo").resizable().scaledToFit().frame(height: 200)
+                                    @unknown default: EmptyView()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                Spacer()
+            }
+            .padding()
+        }
     }
 }
