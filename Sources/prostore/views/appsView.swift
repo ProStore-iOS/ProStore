@@ -103,13 +103,31 @@ final class RepoViewModel: ObservableObject {
     }
 }
 
-// MARK: - The SwiftUI View (no NavigationView wrapper)
+// MARK: - The SwiftUI View (searchable apps list)
 public struct AppsView: View {
     @StateObject private var vm: RepoViewModel
+    
+    // Search state
+    @State private var searchText: String = ""
+    @FocusState private var searchFieldFocused: Bool
     
     // Public initializer so you can pass a custom repository URL (defaults to user's provided URL)
     public init(repoURL: URL = URL(string: "https://repository.apptesters.org/")!) {
         _vm = StateObject(wrappedValue: RepoViewModel(sourceURL: repoURL))
+    }
+    
+    // Filtered apps based on search text
+    private var filteredApps: [AltApp] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return vm.apps }
+        let lowered = query.lowercased()
+        return vm.apps.filter { app in
+            if app.name.lowercased().contains(lowered) { return true }
+            if app.bundleIdentifier.lowercased().contains(lowered) { return true }
+            if let dev = app.developerName, dev.lowercased().contains(lowered) { return true }
+            if let sub = app.subtitle, sub.lowercased().contains(lowered) { return true }
+            return false
+        }
     }
     
     public var body: some View {
@@ -135,11 +153,18 @@ public struct AppsView: View {
                 }
                 .padding()
             } else {
-                List(vm.apps) { app in
+                // List with searchable modifier
+                List(filteredApps) { app in
                     AppRowView(app: app)
                 }
                 .listStyle(PlainListStyle())
                 .refreshable { vm.refresh() }
+                .searchable(text: $searchText, placement: .automatic, prompt: "Search apps or developer")
+                .onSubmit(of: .search) {
+                    // Dismiss keyboard on submit
+                    searchFieldFocused = false
+                }
+                .animation(.default, value: filteredApps)
             }
         }
         .toolbar {
