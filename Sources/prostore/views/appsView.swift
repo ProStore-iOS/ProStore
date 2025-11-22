@@ -207,7 +207,9 @@ private struct AppRowView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                             .shadow(radius: 1, y: 1)
                             .onAppear {
-                                ImageCache.shared.set(image, for: iconURL)
+                                if let uiImage = image.asUIImage() {
+                                    ImageCache.shared.set(uiImage, for: iconURL)
+                                }
                             }
                     case .failure:
                         Image(systemName: "app")
