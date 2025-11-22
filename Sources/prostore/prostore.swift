@@ -10,7 +10,7 @@ struct ProStore: App {
 }
 
 struct MainSidebarView: View {
-    @State private var selected: SidebarItem? = .signer
+    @State private var selected: SidebarItem? = .apps
 
     var body: some View {
         NavigationSplitView {
