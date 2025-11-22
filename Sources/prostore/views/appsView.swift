@@ -27,6 +27,7 @@ struct AltApp: Decodable, Identifiable {
     let iconURL: URL?
     let localizedDescription: String?
     let versions: [AppVersion]?
+    let screenshotURLs: [URL]?
 }
 
 // MARK: - ViewModel
@@ -284,13 +285,13 @@ private struct AppDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                
+                // App Header
                 HStack(alignment: .top, spacing: 16) {
                     if let iconURL = app.iconURL {
                         AsyncImage(url: iconURL) { phase in
                             switch phase {
-                            case .empty:
-                                ProgressView()
-                                    .frame(width: 80, height: 80)
+                            case .empty: ProgressView().frame(width: 80, height: 80)
                             case .success(let image):
                                 image
                                     .resizable()
@@ -303,8 +304,7 @@ private struct AppDetailView: View {
                                     .scaledToFit()
                                     .frame(width: 60, height: 60)
                                     .foregroundColor(.secondary)
-                            @unknown default:
-                                EmptyView()
+                            @unknown default: EmptyView()
                             }
                         }
                     }
@@ -323,47 +323,36 @@ private struct AppDetailView: View {
                     }
                 }
                 
+                // General description
                 if let generalDesc = app.localizedDescription, generalDesc != latestVersion?.localizedDescription {
                     Text(generalDesc)
                 }
                 
-                if let latest = latestVersion, latest.localizedDescription != nil, latest.localizedDescription != app.localizedDescription {
+                // What's New
+                if let latest = latestVersion, let latestDesc = latest.localizedDescription,
+                   latestDesc != app.localizedDescription {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("What's New?")
                             .font(.headline)
-                        Text(latest.localizedDescription!)
+                        Text(latestDesc)
                     }
                 }
                 
+                // Version info
                 if let latest = latestVersion {
                     VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text("Version:")
-                                .bold()
-                            Text(latest.version ?? "Unknown")
-                        }
-                        HStack {
-                            Text("Released:")
-                                .bold()
-                            Text(formatDate(latest.date))
-                        }
-                        HStack {
-                            Text("Size:")
-                                .bold()
-                            Text(formatSize(latest.size))
-                        }
-                        HStack {
-                            Text("Min OS:")
-                                .bold()
-                            Text(latest.minOSVersion ?? "Unknown")
-                        }
+                        HStack { Text("Version:").bold(); Text(latest.version ?? "Unknown") }
+                        HStack { Text("Released:").bold(); Text(formatDate(latest.date)) }
+                        HStack { Text("Size:").bold(); Text(formatSize(latest.size)) }
+                        HStack { Text("Min OS:").bold(); Text(latest.minOSVersion ?? "Unknown") }
                     }
                 }
                 
-                if let screenshots = latestVersion?.screenshotURLs, !screenshots.isEmpty {
+                // Screenshots (from general app)
+                if let screenshots = app.screenshotURLs, !screenshots.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack {
-                            ForEach(screenshots!, id: \.self) { url in
+                        HStack(spacing: 12) {
+                            ForEach(screenshots, id: \.self) { url in
                                 AsyncImage(url: url) { phase in
                                     switch phase {
                                     case .empty: ProgressView()
@@ -373,7 +362,11 @@ private struct AppDetailView: View {
                                             .scaledToFit()
                                             .frame(height: 200)
                                             .cornerRadius(10)
-                                    case .failure: Image(systemName: "photo").resizable().scaledToFit().frame(height: 200)
+                                    case .failure:
+                                        Image(systemName: "photo")
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(height: 200)
                                     @unknown default: EmptyView()
                                     }
                                 }
