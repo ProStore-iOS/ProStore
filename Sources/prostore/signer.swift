@@ -2,7 +2,7 @@ import Foundation
 import ZIPFoundation
 import ZsignSwift
  
-public enum ProStoreTools {
+public enum signer {
     public static func sign(
         ipaURL: URL,
         p12URL: URL,
@@ -159,11 +159,11 @@ fileprivate class SigningManager {
     static func findAppBundle(in payloadDir: URL) throws -> URL {
         let fm = FileManager.default
         guard fm.fileExists(atPath: payloadDir.path) else {
-            throw NSError(domain: "ProStoreTools", code: 1, userInfo: [NSLocalizedDescriptionKey: "Payload not found"])
+            throw NSError(domain: "signer", code: 1, userInfo: [NSLocalizedDescriptionKey: "Payload not found"])
         }
         let contents = try fm.contentsOfDirectory(atPath: payloadDir.path)
         guard let appName = contents.first(where: { $0.hasSuffix(".app") }) else {
-            throw NSError(domain: "ProStoreTools", code: 2, userInfo: [NSLocalizedDescriptionKey: "No .app bundle in Payload"])
+            throw NSError(domain: "signer", code: 2, userInfo: [NSLocalizedDescriptionKey: "No .app bundle in Payload"])
         }
         return payloadDir.appendingPathComponent(appName)
     }

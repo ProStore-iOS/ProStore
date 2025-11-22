@@ -139,7 +139,7 @@ struct SignerView: View {
             selectedCertificateName = "Custom Certificate"
         }
         let provURL = certDir.appendingPathComponent("profile.mobileprovision")
-        if let expiry = ProStoreTools.getExpirationDate(provURL: provURL) {
+        if let expiry = signer.getExpirationDate(provURL: provURL) {
             let now = Date()
             let components = Calendar.current.dateComponents([.day], from: now, to: expiry)
             let days = components.day ?? 0
@@ -205,7 +205,7 @@ struct SignerView: View {
         barColor = .blue
         isError = false
         errorDetails = ""
-        ProStoreTools.sign(
+        signer.sign(
             ipaURL: ipaURL,
             p12URL: p12URL,
             provURL: provURL,

@@ -293,7 +293,7 @@ struct LoyahdevCertificatesView: View {
                 guard let pw = successPw else {
                     throw NSError(domain: "Password", code: 1, userInfo: [NSLocalizedDescriptionKey: "Password check failed"])
                 }
-                let exp = ProStoreTools.getExpirationDate(provData: provDataLocal)
+                let exp = signer.getExpirationDate(provData: provDataLocal)
                 let dispName = CertificatesManager.getCertificateName(mobileProvisionData: provDataLocal) ?? cleanName(release.name)
                 await MainActor.run {
                     self.p12Data = p12DataLocal
@@ -522,7 +522,7 @@ struct OfficialCertificatesView: View {
                 let checkResult = CertificatesManager.check(p12Data: p12DataLocal, password: pwString, mobileProvisionData: provDataLocal)
                 switch checkResult {
                 case .success(.success):
-                    let exp = ProStoreTools.getExpirationDate(provData: provDataLocal)
+                    let exp = signer.getExpirationDate(provData: provDataLocal)
                     let dispName = CertificatesManager.getCertificateName(mobileProvisionData: provDataLocal) ?? item.path
                     await MainActor.run {
                         self.p12Data = p12DataLocal

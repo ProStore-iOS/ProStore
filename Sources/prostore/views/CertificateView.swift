@@ -259,7 +259,7 @@ struct CertificateView: View {
             let folderName = cert.folderName
             let certDir = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(folderName)
             let provURL = certDir.appendingPathComponent("profile.mobileprovision")
-            let expiry = ProStoreTools.getExpirationDate(provURL: provURL)
+            let expiry = signer.getExpirationDate(provURL: provURL)
             certExpiries[folderName] = expiry
         }
     }
