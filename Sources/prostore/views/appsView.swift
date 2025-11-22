@@ -37,57 +37,66 @@ final class RepoViewModel: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var errorMessage: String? = nil
     
-    private let sourceURL: URL
+    private let sourceURLs: [URL]   // <-- multiple sources
     
-    init(sourceURL: URL) {
-        self.sourceURL = sourceURL
-        Task { await load() }
+    init(sourceURLs: [URL]) {
+        self.sourceURLs = sourceURLs
+        Task { await loadAllSources() }
     }
     
-    func load() async {
+    func loadAllSources() async {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
         
-        do {
-            var request = URLRequest(url: sourceURL)
-            request.setValue("AppTestersListView/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
-            
-            let (data, response) = try await URLSession.shared.data(for: request)
-            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                throw NSError(domain: "RepoFetcher", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode)"])
+        var combinedApps: [AltApp] = []
+        var errors: [String] = []
+        
+        for url in sourceURLs {
+            do {
+                var request = URLRequest(url: url)
+                request.setValue("AppTestersListView/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
+                
+                let (data, response) = try await URLSession.shared.data(for: request)
+                if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                    throw NSError(domain: "RepoFetcher", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode)"])
+                }
+                
+                let decoder = JSONDecoder()
+                
+                if let source = try? decoder.decode(AltSource.self, from: data), let apps = source.apps {
+                    combinedApps.append(contentsOf: apps)
+                    continue
+                }
+                
+                if let appsArray = try? decoder.decode([AltApp].self, from: data) {
+                    combinedApps.append(contentsOf: appsArray)
+                    continue
+                }
+                
+                if let jsonObject = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let appsFragment = jsonObject["apps"] {
+                    let fragmentData = try JSONSerialization.data(withJSONObject: appsFragment)
+                    let appsArray = try decoder.decode([AltApp].self, from: fragmentData)
+                    combinedApps.append(contentsOf: appsArray)
+                    continue
+                }
+                
+                throw NSError(domain: "RepoFetcher", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unexpected JSON format."])
+                
+            } catch {
+                errors.append("Failed \(url): \(error.localizedDescription)")
             }
-            
-            let decoder = JSONDecoder()
-            
-            if let source = try? decoder.decode(AltSource.self, from: data), let apps = source.apps {
-                self.apps = apps
-                return
-            }
-            
-            if let appsArray = try? decoder.decode([AltApp].self, from: data) {
-                self.apps = appsArray
-                return
-            }
-            
-            if let jsonObject = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let appsFragment = jsonObject["apps"] {
-                let fragmentData = try JSONSerialization.data(withJSONObject: appsFragment)
-                let appsArray = try decoder.decode([AltApp].self, from: fragmentData)
-                self.apps = appsArray
-                return
-            }
-            
-            throw NSError(domain: "RepoFetcher", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unexpected JSON format."])
-            
-        } catch {
-            self.errorMessage = "Failed to load repository: \(error.localizedDescription)"
-            self.apps = []
+        }
+        
+        self.apps = combinedApps
+        if !errors.isEmpty {
+            self.errorMessage = errors.joined(separator: "\n")
         }
     }
     
     func refresh() {
-        Task { await load() }
+        Task { await loadAllSources() }
     }
 }
 
@@ -98,8 +107,8 @@ public struct AppsView: View {
     @FocusState private var searchFieldFocused: Bool
     @State private var selectedApp: AltApp? = nil
     
-    public init(repoURL: URL = URL(string: "https://repository.apptesters.org/")!) {
-        _vm = StateObject(wrappedValue: RepoViewModel(sourceURL: repoURL))
+    public init(repoURLs: [URL] = [URL(string: "https://repository.apptesters.org/")!]) {
+        _vm = StateObject(wrappedValue: RepoViewModel(sourceURLs: repoURLs))
     }
     
     private var filteredApps: [AltApp] {

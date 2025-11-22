@@ -45,7 +45,14 @@ struct MainSidebarView: View {
                 }
             case .apps:
                 NavigationStack {
-                    AppsView()
+                    AppsView(repoURLs: [
+                        URL(string: "https://repository.apptesters.org/")!,
+                        URL(string: "https://wuxu1.github.io/wuxu-complete.json")!,
+                        URL(string: "https://wuxu1.github.io/wuxu-complete-plus.json")!,
+                        URL(string: "https://raw.githubusercontent.com/RealBlackAstronaut/CelestialRepo/main/CelestialRepo.json")!,
+                        URL(string: "https://ipa.cypwn.xyz/cypwn.json")!,
+                        URL(string: "https://quarksources.github.io/altstore-complete.json")!
+                    ])
                         .navigationTitle("Apps")
                         .navigationBarTitleDisplayMode(.large)
                 }
