@@ -103,7 +103,7 @@ final class RepoViewModel: ObservableObject {
     }
 }
 
-// MARK: - The SwiftUI View (searchable apps list)
+// MARK: - The SwiftUI View (search bar added; works without NavigationView)
 public struct AppsView: View {
     @StateObject private var vm: RepoViewModel
     
@@ -131,41 +131,61 @@ public struct AppsView: View {
     }
     
     public var body: some View {
-        Group {
-            if vm.isLoading && vm.apps.isEmpty {
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("Loading apps...")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+        VStack(spacing: 0) {
+            // Search bar (always visible, works outside NavigationView)
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+                TextField("Search apps, developer or bundle ID", text: $searchText)
+                    .textInputAutocapitalization(.never)
+                    .disableAutocorrection(true)
+                    .focused($searchFieldFocused)
+                    .submitLabel(.search)
+                if !searchText.isEmpty {
+                    Button(action: { searchText = "" }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .padding()
-            } else if let error = vm.errorMessage, vm.apps.isEmpty {
-                VStack(spacing: 12) {
-                    Text("Error")
-                        .font(.headline)
-                    Text(error)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                    Button("Retry") { vm.refresh() }
-                        .padding(.top, 8)
-                }
-                .padding()
-            } else {
-                // List with searchable modifier
-                List(filteredApps) { app in
-                    AppRowView(app: app)
-                }
-                .listStyle(PlainListStyle())
-                .refreshable { vm.refresh() }
-                .searchable(text: $searchText, placement: .automatic, prompt: "Search apps or developer")
-                .onSubmit(of: .search) {
-                    // Dismiss keyboard on submit
-                    searchFieldFocused = false
-                }
-                .animation(.default, value: filteredApps)
             }
+            .padding(10)
+            .background(.regularMaterial) // nice subtle background
+            .cornerRadius(10)
+            .padding(.horizontal)
+            .padding(.top, 8)
+            
+            // Content
+            Group {
+                if vm.isLoading && vm.apps.isEmpty {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Loading apps...")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding()
+                } else if let error = vm.errorMessage, vm.apps.isEmpty {
+                    VStack(spacing: 12) {
+                        Text("Error")
+                            .font(.headline)
+                        Text(error)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                        Button("Retry") { vm.refresh() }
+                            .padding(.top, 8)
+                    }
+                    .padding()
+                } else {
+                    List(filteredApps) { app in
+                        AppRowView(app: app)
+                    }
+                    .listStyle(PlainListStyle())
+                    .refreshable { vm.refresh() }
+                }
+            }
+            .padding(.top, 8)
         }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
