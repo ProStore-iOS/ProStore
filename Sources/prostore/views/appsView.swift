@@ -9,7 +9,7 @@ struct AltSource: Decodable {
     let apps: [AltApp]?
 }
 
-struct AltApp: Decodable, Identifiable {
+struct AltApp: Decodable, Identifiable, Equatable {
     // Use bundleIdentifier as stable id
     var id: String { bundleIdentifier }
     let name: String
