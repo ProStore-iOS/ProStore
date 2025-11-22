@@ -360,7 +360,7 @@ private struct AppDetailView: View {
                     }
                 }
                 
-                if let screenshots = latestVersion?.downloadURL != nil ? [] : nil, !screenshots!.isEmpty {
+                if let screenshots = latestVersion?.screenshotURLs, !screenshots.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack {
                             ForEach(screenshots!, id: \.self) { url in

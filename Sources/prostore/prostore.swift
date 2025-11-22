@@ -34,25 +34,25 @@ struct MainSidebarView: View {
             case .signer:
                 NavigationStack {
                     SignerView()
-                        .navigationTitle("ProStore - Signer")
+                        .navigationTitle("Signer")
                         .navigationBarTitleDisplayMode(.large)
                 }
             case .certificates:
                 NavigationStack {
                     CertificateView()
-                        .navigationTitle("ProStore - Certificates")
+                        .navigationTitle("Certificates")
                         .navigationBarTitleDisplayMode(.large)
                 }
             case .apps:
                 NavigationStack {
                     AppsView()
-                        .navigationTitle("ProStore - Apps")
+                        .navigationTitle("Apps")
                         .navigationBarTitleDisplayMode(.large)
                 }
             case .about:
                 NavigationStack {
                     AboutView()
-                        .navigationTitle("ProStore - About")
+                        .navigationTitle("About")
                         .navigationBarTitleDisplayMode(.large)
                 }
             case nil:
