@@ -350,10 +350,33 @@ private struct AppDetailView: View {
                 // Version info
                 if let latest = latestVersion {
                     VStack(alignment: .leading, spacing: 4) {
-                        HStack { Text("Version:").bold(); Text(latest.version ?? "Unknown") }
-                        HStack { Text("Released:").bold(); Text(formatDate(latest.date)) }
-                        HStack { Text("Size:").bold(); Text(formatSize(latest.size)) }
-                        HStack { Text("Min OS:").bold(); Text(latest.minOSVersion ?? "Unknown") }
+                        if let version = latest.version, !version.isEmpty {
+                            HStack {
+                                Text("Version:").bold()
+                                Text(version)
+                            }
+                        }
+        
+                        if let dateString = latest.date, !dateString.isEmpty {
+                            HStack {
+                                Text("Released:").bold()
+                                Text(formatDate(dateString))
+                            }
+                        }
+        
+                        if let size = latest.size {
+                            HStack {
+                                Text("Size:").bold()
+                                Text(formatSize(size))
+                            }
+                        }
+        
+                        if let minOS = latest.minOSVersion, !minOS.isEmpty {
+                            HStack {
+                                Text("Min OS:").bold()
+                                Text(minOS)
+                            }
+                        }
                     }
                 }
                 
