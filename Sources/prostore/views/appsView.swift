@@ -25,7 +25,7 @@ struct AltApp: Decodable, Identifiable, Equatable {
     }
 }
 
-struct AppVersion: Decodable {
+struct AppVersion: Decodable, Equatable {
     let version: String?
     let buildVersion: String?
     let date: String?
