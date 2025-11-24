@@ -114,7 +114,12 @@ private struct RetryAsyncImage<Content: View, Placeholder: View, Failure: View>:
     private var modifiedURL: URL? {
         guard let url = url else { return nil }
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        components?.queryItems = (components?.queryItems ?? []) + [URLQueryItem(name: "attempt", value: "\(currentAttempt)")]
+        if var queryItems = components?.queryItems {
+            queryItems += [URLQueryItem(name: "attempt", value: "\(currentAttempt)")]
+            components?.queryItems = queryItems
+        } else {
+            components?.queryItems = [URLQueryItem(name: "attempt", value: "\(currentAttempt)")]
+        }
         return components?.url
     }
     
