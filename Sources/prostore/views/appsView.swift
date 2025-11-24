@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import Foundation
 
 // MARK: - Models
 struct AltSource: Decodable {
@@ -100,6 +101,64 @@ final class RepoViewModel: ObservableObject {
     }
 }
 
+// MARK: - RetryAsyncImage
+private struct RetryAsyncImage<Content: View, Placeholder: View, Failure: View>: View {
+    let url: URL?
+    let maxAttempts: Int
+    let content: (Image) -> Content
+    let placeholder: () -> Placeholder
+    let failure: () -> Failure
+    
+    @State private var currentAttempt: Int = 0
+    
+    private var modifiedURL: URL? {
+        guard let url = url else { return nil }
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.queryItems = (components?.queryItems ?? []) + [URLQueryItem(name: "attempt", value: "\(currentAttempt)")]
+        return components?.url
+    }
+    
+    init(
+        url: URL?,
+        maxAttempts: Int = 3,
+        @ViewBuilder content: @escaping (Image) -> Content,
+        @ViewBuilder placeholder: @escaping () -> Placeholder,
+        @ViewBuilder failure: @escaping () -> Failure
+    ) {
+        self.url = url
+        self.maxAttempts = maxAttempts
+        self.content = content
+        self.placeholder = placeholder
+        self.failure = failure
+    }
+    
+    var body: some View {
+        if let modifiedURL = modifiedURL {
+            AsyncImage(url: modifiedURL) { phase in
+                switch phase {
+                case .empty:
+                    placeholder()
+                case .success(let image):
+                    content(image)
+                case .failure:
+                    if currentAttempt < maxAttempts - 1 {
+                        Color.clear
+                            .onAppear {
+                                currentAttempt += 1
+                            }
+                    } else {
+                        failure()
+                    }
+                @unknown default:
+                    EmptyView()
+                }
+            }
+        } else {
+            failure()
+        }
+    }
+}
+
 // MARK: - AppsView
 public struct AppsView: View {
     @StateObject private var vm: RepoViewModel
@@ -127,28 +186,30 @@ public struct AppsView: View {
     public var body: some View {
         VStack(spacing: 0) {
             
-            // Search Bar
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
-                TextField("Search apps, developer or bundle ID", text: $searchText)
-                    .textInputAutocapitalization(.never)
-                    .disableAutocorrection(true)
-                    .focused($searchFieldFocused)
-                    .submitLabel(.search)
-                if !searchText.isEmpty {
-                    Button(action: { searchText = "" }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
+            // Search Bar (hidden during initial load)
+            if !(vm.isLoading && vm.apps.isEmpty) {
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                    TextField("Search apps, developer or bundle ID", text: $searchText)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                        .focused($searchFieldFocused)
+                        .submitLabel(.search)
+                    if !searchText.isEmpty {
+                        Button(action: { searchText = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
+                .padding(10)
+                .background(.regularMaterial)
+                .cornerRadius(10)
+                .padding(.horizontal)
+                .padding(.top, 8)
             }
-            .padding(10)
-            .background(.regularMaterial)
-            .cornerRadius(10)
-            .padding(.horizontal)
-            .padding(.top, 8)
             
             // Content
             Group {
@@ -208,27 +269,28 @@ private struct AppRowView: View {
     var body: some View {
         HStack(spacing: 12) {
             if let iconURL = app.iconURL {
-                AsyncImage(url: iconURL) { phase in
-                    switch phase {
-                    case .empty:
-                        ProgressView()
-                            .frame(width: 48, height: 48)
-                    case .success(let image):
+                RetryAsyncImage(
+                    url: iconURL,
+                    maxAttempts: 3,
+                    content: { image in
                         image
                             .resizable()
                             .scaledToFill()
                             .frame(width: 48, height: 48)
                             .clipShape(RoundedRectangle(cornerRadius: 10))
-                    case .failure:
+                    },
+                    placeholder: {
+                        ProgressView()
+                            .frame(width: 48, height: 48)
+                    },
+                    failure: {
                         Image(systemName: "app")
                             .resizable()
                             .scaledToFit()
                             .frame(width: 36, height: 36)
                             .foregroundColor(.secondary)
-                    @unknown default:
-                        EmptyView()
                     }
-                }
+                )
             } else {
                 Image(systemName: "app")
                     .resizable()
@@ -256,16 +318,11 @@ private struct AppRowView: View {
             
             Spacer()
             
-            if let size = app.versions?.first?.size {
-                Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            } else {
-                Image(systemName: "chevron.right")
-                    .foregroundColor(.secondary)
-            }
+            Image(systemName: "chevron.right")
+                .foregroundColor(.secondary)
         }
         .padding(.vertical, 6)
+        .contentShape(Rectangle())
     }
 }
 
@@ -298,24 +355,34 @@ private struct AppDetailView: View {
                 // App Header
                 HStack(alignment: .top, spacing: 16) {
                     if let iconURL = app.iconURL {
-                        AsyncImage(url: iconURL) { phase in
-                            switch phase {
-                            case .empty: ProgressView().frame(width: 80, height: 80)
-                            case .success(let image):
+                        RetryAsyncImage(
+                            url: iconURL,
+                            maxAttempts: 3,
+                            content: { image in
                                 image
                                     .resizable()
                                     .scaledToFit()
                                     .frame(width: 80, height: 80)
                                     .clipShape(RoundedRectangle(cornerRadius: 12))
-                            case .failure:
+                            },
+                            placeholder: {
+                                ProgressView()
+                                    .frame(width: 80, height: 80)
+                            },
+                            failure: {
                                 Image(systemName: "app")
                                     .resizable()
                                     .scaledToFit()
                                     .frame(width: 60, height: 60)
                                     .foregroundColor(.secondary)
-                            @unknown default: EmptyView()
                             }
-                        }
+                        )
+                    } else {
+                        Image(systemName: "app")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 60, height: 60)
+                            .foregroundColor(.secondary)
                     }
                     VStack(alignment: .leading, spacing: 4) {
                         Text(app.name)
@@ -413,4 +480,5 @@ private struct AppDetailView: View {
             .padding()
         }
     }
+
 }
