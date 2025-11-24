@@ -47,6 +47,7 @@ extension Date {
 struct CertificateView: View {
     @State private var customCertificates: [CustomCertificate] = []
     @State private var certExpiries: [String: Date?] = [:]
+    @State private var certStatuses: [String: String] = [:]
     @State private var showAddCertificateSheet = false
     @State private var showLoyahdevSheet = false
     @State private var showOfficialSheet = false
@@ -171,6 +172,13 @@ struct CertificateView: View {
                     .fontWeight(.medium)
                     .foregroundColor(.secondary)
             }
+            
+            if let status = certStatuses[cert.folderName] {
+                Text(status)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(statusColor(for: status))
+            }
         }
         .padding(20)
         .frame(maxWidth: .infinity)
@@ -201,19 +209,32 @@ struct CertificateView: View {
     }
  
     private func certificateBackground(for cert: CustomCertificate) -> Color {
-        guard let expiry = certExpiries[cert.folderName], expiry != nil else {
+        guard let expiry = certExpiries[cert.folderName], let validExpiry = expiry,
+              let status = certStatuses[cert.folderName] else {
             return Color.clear
         }
         let now = Date()
-        let components = Calendar.current.dateComponents([.day], from: now, to: expiry!)
+        let components = Calendar.current.dateComponents([.day], from: now, to: validExpiry)
         let days = components.day ?? 0
-        switch days {
-        case ..<0, 0:
+        if status != "Signed" || days <= 0 {
             return .red.opacity(0.15)
-        case 1...30:
+        } else if days <= 30 {
             return .yellow.opacity(0.15)
-        default:
+        } else {
             return .green.opacity(0.15)
+        }
+    }
+    
+    private func statusColor(for status: String) -> Color {
+        switch status {
+        case "Signed":
+            return .green
+        case "Revoked", "Mismatch":
+            return .red
+        case "Unknown":
+            return .gray
+        default:
+            return .secondary
         }
     }
  
@@ -255,16 +276,36 @@ struct CertificateView: View {
         customCertificates = CertificateFileManager.shared.loadCertificates()
         selectedCert = UserDefaults.standard.string(forKey: "selectedCertificateFolder")
         ensureSelection()
-        loadExpiries()
+        Task {
+            await loadExpiries()
+        }
     }
  
-    private func loadExpiries() {
+    private func loadExpiries() async {
+        certExpiries = [:]
+        certStatuses = [:]
         for cert in customCertificates {
             let folderName = cert.folderName
             let certDir = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(folderName)
             let provURL = certDir.appendingPathComponent("profile.mobileprovision")
-            let expiry = signer.getExpirationDate(provURL: provURL)
-            certExpiries[folderName] = expiry
+            let p12URL = certDir.appendingPathComponent("certificate.p12")
+            let passwordURL = certDir.appendingPathComponent("password.txt")
+            let localExpiry = signer.getExpirationDate(provURL: provURL)
+            let password = (try? String(contentsOf: passwordURL, encoding: .utf8)) ?? ""
+            let result = await CertRevokeChecker.shared.check(p12URL: p12URL, provisionURL: provURL, password: password)
+            switch result {
+            case .success(let isSigned, let expires, let match):
+                if match {
+                    certExpiries[folderName] = expires
+                    certStatuses[folderName] = isSigned ? "Signed" : "Revoked"
+                } else {
+                    certStatuses[folderName] = "Mismatch"
+                    certExpiries[folderName] = localExpiry
+                }
+            case .failure, .networkError:
+                certStatuses[folderName] = "Unknown"
+                certExpiries[folderName] = localExpiry
+            }
         }
     }
     private func ensureSelection() {
@@ -289,7 +330,9 @@ struct CertificateView: View {
             }
         }
         ensureSelection()
-        loadExpiries()
+        Task {
+            await loadExpiries()
+        }
     }
 }
 
