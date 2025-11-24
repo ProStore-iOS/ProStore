@@ -1,6 +1,5 @@
 import SwiftUI
 import UniformTypeIdentifiers
-
 // Centralized types to avoid conflicts
 struct CertificateFileItem {
     var name: String = ""
@@ -11,7 +10,6 @@ struct CustomCertificate: Identifiable {
     let displayName: String
     let folderName: String
 }
-
 // MARK: - Date Extension for Formatting
 extension Date {
     func formattedWithOrdinal() -> String {
@@ -23,7 +21,6 @@ extension Date {
         let year = Calendar.current.component(.year, from: self)
         return "\(ordinal) of \(month) \(year)"
     }
- 
     private func ordinalSuffix(for number: Int) -> String {
         let suffix: String
         let ones = number % 10
@@ -42,7 +39,6 @@ extension Date {
         return "\(number)\(suffix)"
     }
 }
-
 // MARK: - CertificateView (List + Add/Edit launchers)
 struct CertificateView: View {
     @State private var customCertificates: [CustomCertificate] = []
@@ -134,7 +130,6 @@ struct CertificateView: View {
             reloadCertificatesAndEnsureSelection()
         }
     }
- 
     private func certificateItem(for cert: CustomCertificate) -> some View {
         ZStack(alignment: .top) {
             certificateContent(for: cert)
@@ -153,7 +148,6 @@ struct CertificateView: View {
             certificateButtons(for: cert)
         }
     }
- 
     private func certificateContent(for cert: CustomCertificate) -> some View {
         VStack(alignment: .center, spacing: 12) {
             Text(cert.displayName)
@@ -163,7 +157,6 @@ struct CertificateView: View {
                 .lineLimit(2)
                 .minimumScaleFactor(0.8)
                 .multilineTextAlignment(.center)
-
             if let expiry = certExpiries[cert.folderName], let validExpiry = expiry {
                 expiryDisplay(for: validExpiry)
             } else {
@@ -172,13 +165,11 @@ struct CertificateView: View {
                     .fontWeight(.medium)
                     .foregroundColor(.secondary)
             }
-            
-            if let status = certStatuses[cert.folderName] {
-                Text(status)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(statusColor(for: status))
-            }
+            let status = certStatuses[cert.folderName] ?? "Unknown"
+            Text("Status: \(status)")
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(status == "Revoked" ? .red : .secondary)
         }
         .padding(20)
         .frame(maxWidth: .infinity)
@@ -189,7 +180,6 @@ struct CertificateView: View {
                 .stroke(selectedCert == cert.folderName ? Color.blue : Color.clear, lineWidth: 3)
         )
     }
- 
     private func expiryDisplay(for expiry: Date) -> some View {
         let now = Date()
         let components = Calendar.current.dateComponents([.day], from: now, to: expiry)
@@ -207,37 +197,26 @@ struct CertificateView: View {
             .fontWeight(.medium)
             .foregroundColor(.primary)
     }
- 
     private func certificateBackground(for cert: CustomCertificate) -> Color {
-        guard let expiry = certExpiries[cert.folderName], let validExpiry = expiry,
-              let status = certStatuses[cert.folderName] else {
+        let status = certStatuses[cert.folderName] ?? "Unknown"
+        if status == "Revoked" {
+            return .red.opacity(0.15)
+        }
+        guard let expiry = certExpiries[cert.folderName], expiry != nil else {
             return Color.clear
         }
         let now = Date()
-        let components = Calendar.current.dateComponents([.day], from: now, to: validExpiry)
+        let components = Calendar.current.dateComponents([.day], from: now, to: expiry!)
         let days = components.day ?? 0
-        if status != "Signed" || days <= 0 {
+        switch days {
+        case ..<0, 0:
             return .red.opacity(0.15)
-        } else if days <= 30 {
+        case 1...30:
             return .yellow.opacity(0.15)
-        } else {
+        default:
             return .green.opacity(0.15)
         }
     }
-    
-    private func statusColor(for status: String) -> Color {
-        switch status {
-        case "Signed":
-            return .green
-        case "Revoked", "Mismatch":
-            return .red
-        case "Unknown":
-            return .gray
-        default:
-            return .secondary
-        }
-    }
- 
     private func certificateButtons(for cert: CustomCertificate) -> some View {
         HStack {
             Button(action: {
@@ -251,9 +230,9 @@ struct CertificateView: View {
                     .background(Color(.systemGray6).opacity(0.8))
                     .clipShape(Circle())
             }
-      
+     
             Spacer()
-      
+     
             Button(action: {
                 if customCertificates.count > 1 {
                     certToDelete = cert
@@ -276,36 +255,23 @@ struct CertificateView: View {
         customCertificates = CertificateFileManager.shared.loadCertificates()
         selectedCert = UserDefaults.standard.string(forKey: "selectedCertificateFolder")
         ensureSelection()
-        Task {
-            await loadExpiries()
+        loadExpiries()
+        for cert in customCertificates {
+            Task {
+                let status = await CertRevokeChecker.checkRevocation(folderName: cert.folderName)
+                await MainActor.run {
+                    certStatuses[cert.folderName] = status
+                }
+            }
         }
     }
- 
-    private func loadExpiries() async {
-        certExpiries = [:]
-        certStatuses = [:]
+    private func loadExpiries() {
         for cert in customCertificates {
             let folderName = cert.folderName
             let certDir = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(folderName)
             let provURL = certDir.appendingPathComponent("profile.mobileprovision")
-            let p12URL = certDir.appendingPathComponent("certificate.p12")
-            let passwordURL = certDir.appendingPathComponent("password.txt")
-            let localExpiry = signer.getExpirationDate(provURL: provURL)
-            let password = (try? String(contentsOf: passwordURL, encoding: .utf8)) ?? ""
-            let result = await CertRevokeChecker.shared.check(p12URL: p12URL, provisionURL: provURL, password: password)
-            switch result {
-            case .success(let isSigned, let expires, let match):
-                if match {
-                    certExpiries[folderName] = expires
-                    certStatuses[folderName] = isSigned ? "Signed" : "Revoked"
-                } else {
-                    certStatuses[folderName] = "Mismatch"
-                    certExpiries[folderName] = localExpiry
-                }
-            case .failure, .networkError:
-                certStatuses[folderName] = "Unknown"
-                certExpiries[folderName] = localExpiry
-            }
+            let expiry = signer.getExpirationDate(provURL: provURL)
+            certExpiries[folderName] = expiry
         }
     }
     private func ensureSelection() {
@@ -319,7 +285,7 @@ struct CertificateView: View {
     private func deleteCertificate(_ cert: CustomCertificate) {
         try? CertificateFileManager.shared.deleteCertificate(folderName: cert.folderName)
         customCertificates = CertificateFileManager.shared.loadCertificates()
-  
+ 
         if selectedCert == cert.folderName {
             if let newSelection = customCertificates.first {
                 selectedCert = newSelection.folderName
@@ -330,12 +296,9 @@ struct CertificateView: View {
             }
         }
         ensureSelection()
-        Task {
-            await loadExpiries()
-        }
+        loadExpiries()
     }
 }
-
 // MARK: - Add / Edit View
 struct AddCertificateView: View {
     @Environment(\.dismiss) private var dismiss
@@ -371,7 +334,7 @@ struct AddCertificateView: View {
                         }
                     }
                     .disabled(isChecking)
-              
+             
                     Button(action: { activeSheet = .prov }) {
                         HStack {
                             Image(systemName: "gearshape.fill")
@@ -387,12 +350,12 @@ struct AddCertificateView: View {
                     }
                     .disabled(isChecking)
                 }
-          
+         
                 Section(header: Text("Display Name")) {
                     TextField("Optional Display Name", text: $displayName)
                         .disabled(isChecking)
                 }
-          
+         
                 Section(header: Text("Password")) {
                     SecureField("Enter Password", text: $password)
                         .disabled(isChecking)
@@ -400,7 +363,7 @@ struct AddCertificateView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-          
+         
                 if !errorMessage.isEmpty {
                     Text(errorMessage)
                         .foregroundColor(.red)
@@ -453,10 +416,10 @@ struct AddCertificateView: View {
         let provURL = certFolder.appendingPathComponent("profile.mobileprovision")
         let passwordURL = certFolder.appendingPathComponent("password.txt")
         let nameURL = certFolder.appendingPathComponent("name.txt")
-  
+ 
         p12File = CertificateFileItem(name: "certificate.p12", url: p12URL)
         provFile = CertificateFileItem(name: "profile.mobileprovision", url: provURL)
-  
+ 
         if let pwData = try? Data(contentsOf: passwordURL), let pw = String(data: pwData, encoding: .utf8) {
             password = pw
         }
@@ -464,13 +427,12 @@ struct AddCertificateView: View {
             displayName = nameStr
         }
     }
- 
     private func saveCertificate() {
         guard let p12URL = p12File?.url, let provURL = provFile?.url else { return }
-  
+ 
         isChecking = true
         errorMessage = ""
-  
+ 
         let workItem: DispatchWorkItem = DispatchWorkItem {
             do {
                 var p12Data: Data
@@ -489,16 +451,16 @@ struct AddCertificateView: View {
                     p12Data = try Data(contentsOf: p12URL)
                     provData = try Data(contentsOf: provURL)
                 }
-          
+         
                 let checkResult = CertificatesManager.check(p12Data: p12Data, password: self.password, mobileProvisionData: provData)
                 var dispatchError: String?
-          
+         
                 switch checkResult {
                 case .success(.success):
                     if localDisplayName.isEmpty {
                         localDisplayName = CertificatesManager.getCertificateName(mobileProvisionData: provData) ?? "Custom Certificate"
                     }
-              
+             
                     if let folder = self.editingCertificate?.folderName {
                         try CertificateFileManager.shared.updateCertificate(folderName: folder, p12Data: p12Data, provData: provData, password: self.password, displayName: localDisplayName)
                     } else {
@@ -512,7 +474,7 @@ struct AddCertificateView: View {
                 case .failure(let error):
                     dispatchError = "Error: \(error.localizedDescription)"
                 }
-          
+         
                 DispatchQueue.main.async {
                     self.isChecking = false
                     if let err = dispatchError {
