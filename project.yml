@@ -30,8 +30,8 @@ targets:
       properties:
         CFBundleDisplayName: "ProStore"
         CFBundleName: "prostore"
-        CFBundleVersion: "11"
-        CFBundleShortVersionString: "0.5.2"
+        CFBundleVersion: "12"
+        CFBundleShortVersionString: "0.6.0"
         UILaunchStoryboardName: "LaunchScreen"
         NSPrincipalClass: "UIApplication"
         NSAppTransportSecurity:
@@ -50,3 +50,4 @@ targets:
 
 
         product: ZIPFoundation
+
