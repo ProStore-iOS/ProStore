@@ -141,7 +141,7 @@ public struct AppDetailView: View {
 
                         if let minOS = latest.minOSVersion, !minOS.isEmpty {
                             HStack {
-                                Text("Min OS:").bold()
+                                Text("Min iOS Version:").bold()
                                 Text(minOS)
                             }
                         }
