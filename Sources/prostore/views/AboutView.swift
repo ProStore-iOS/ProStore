@@ -34,12 +34,6 @@ struct AboutView: View {
             role: "iOS Certificates Source",
             profileURL: URL(string: "https://github.com/loyahdev")!,
             avatarURL: URL(string: "https://github.com/loyahdev.png")!
-        ),
-        Credit(
-            name: "AppTesters",
-            role: "Apps Library",
-            profileURL: URL(string: "https://github.com/apptesters-org")!,
-            avatarURL: URL(string: "https://github.com/apptesters-org.png")!
         )
     ]
 
