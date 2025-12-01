@@ -24,19 +24,12 @@ struct UpdaterWebView: UIViewRepresentable {
         
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
-        webView.uiDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
-        
-        // Add pull-to-refresh
-        let refreshControl = UIRefreshControl()
-        refreshControl.addTarget(context.coordinator, action: #selector(Coordinator.refreshWebView(_:)), for: .valueChanged)
-        webView.scrollView.refreshControl = refreshControl
 
         // Clear cache completely
         let dataTypes = Set([WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache, WKWebsiteDataTypeCookies])
         WKWebsiteDataStore.default().removeData(ofTypes: dataTypes, modifiedSince: Date.distantPast) {
             print("✅ WKWebView cache fully cleared!")
-            // Load the request after clearing cache
             let request = URLRequest(url: self.url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
             webView.load(request)
         }
@@ -45,7 +38,6 @@ struct UpdaterWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {
-        // Reload only if URL changed
         if uiView.url != url {
             let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
             uiView.load(request)
@@ -53,7 +45,7 @@ struct UpdaterWebView: UIViewRepresentable {
     }
 
     // MARK: - Coordinator
-    class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    class Coordinator: NSObject, WKNavigationDelegate {
         let parent: UpdaterWebView
 
         init(parent: UpdaterWebView) {
@@ -62,25 +54,16 @@ struct UpdaterWebView: UIViewRepresentable {
             requestNotificationPermission()
         }
 
-        // Pull-to-refresh handler
-        @objc func refreshWebView(_ sender: UIRefreshControl) {
-            if let webView = sender.superview as? WKWebView {
-                let request = URLRequest(url: parent.url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
-                webView.load(request)
-            }
-            sender.endRefreshing()
-        }
-
-        // Request notification permissions
         private func requestNotificationPermission() {
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
                 if granted {
                     print("🔔 Notifications allowed!")
+                } else if let error = error {
+                    print("❌ Notification permission error: \(error)")
                 }
             }
         }
 
-        // Send local notification
         private func sendUpdateNotification() {
             let content = UNMutableNotificationContent()
             content.title = "ProStore Update"
@@ -88,7 +71,13 @@ struct UpdaterWebView: UIViewRepresentable {
             content.sound = .default
 
             let request = UNNotificationRequest(identifier: "ProStoreUpdate", content: content, trigger: nil)
-            UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error = error {
+                    print("❌ Failed to schedule notification: \(error)")
+                } else {
+                    print("✅ Notification scheduled!")
+                }
+            }
         }
 
         // MARK: Navigation Delegate
@@ -102,17 +91,29 @@ struct UpdaterWebView: UIViewRepresentable {
 
             let scheme = reqURL.scheme?.lowercased() ?? ""
 
-            // 1️⃣ itms-services: open in system & send push
+            // Handle itms-services
             if scheme == "itms-services" {
                 if UIApplication.shared.canOpenURL(reqURL) {
-                    UIApplication.shared.open(reqURL, options: [:], completionHandler: nil)
-                    sendUpdateNotification()
+                    // Open Apple install dialog
+                    UIApplication.shared.open(reqURL, options: [:]) { success in
+                        if success {
+                            // Minimise app to home screen
+                            DispatchQueue.main.async {
+                                // Trick to go home
+                                UIApplication.shared.perform(#selector(NSXPCConnection.suspend))
+                                // Send push notification after a tiny delay to ensure we're on Home Screen
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                    self.sendUpdateNotification()
+                                }
+                            }
+                        }
+                    }
                 }
                 decisionHandler(.cancel)
                 return
             }
 
-            // 2️⃣ target="_blank": open externally
+            // Open external links in Safari
             if navigationAction.navigationType == .linkActivated, navigationAction.targetFrame == nil {
                 UIApplication.shared.open(reqURL, options: [:], completionHandler: nil)
                 decisionHandler(.cancel)
