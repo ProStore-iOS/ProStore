@@ -111,7 +111,7 @@ public struct AppVersion: Decodable {
 }
 
 // Final AltApp used by the UI (includes repositoryName)
-public struct AltApp: Identifiable {
+public struct AltApp: Identifiable, Equatable {
     public var id: String { bundleIdentifier }
 
     public let name: String
@@ -126,8 +126,22 @@ public struct AltApp: Identifiable {
     public let versionDate: String?
     public let fullDate: String?
     public let downloadURL: URL?
-    public let repositoryName: String?   // <-- new
+    public let repositoryName: String?
+    public static func == (lhs: AltApp, rhs: AltApp) -> Bool {
+        return lhs.bundleIdentifier == rhs.bundleIdentifier &&
+               lhs.name == rhs.name &&
+               lhs.developerName == rhs.developerName &&
+               lhs.subtitle == rhs.subtitle &&
+               lhs.iconURL?.absoluteString == rhs.iconURL?.absoluteString &&
+               lhs.localizedDescription == rhs.localizedDescription &&
+               lhs.size == rhs.size &&
+               lhs.versionDate == rhs.versionDate &&
+               lhs.fullDate == rhs.fullDate &&
+               lhs.downloadURL?.absoluteString == rhs.downloadURL?.absoluteString &&
+               lhs.repositoryName == rhs.repositoryName
+    }
 }
+
 
 // MARK: - ViewModel
 @MainActor
