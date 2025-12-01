@@ -345,7 +345,7 @@ struct RetryAsyncImage<Content: View, Placeholder: View, Failure: View>: View {
 enum SortOption: String, CaseIterable, Identifiable {
     case nameAZ = "Name: A - Z"
     case nameZA = "Name: Z - A"
-    case repoAZ = "Repository: A - Z"
+    case repoAZ = "Repository"
     case dateNewOld = "Date: New - Old"
     case dateOldNew = "Date: Old - New"
     case sizeLowHigh = "Size: Low - High"
@@ -397,6 +397,9 @@ public struct AppsView: View {
     @State private var selectedApp: AltApp? = nil
     @State private var sortOption: SortOption = .nameAZ
 
+    /// Which repositories are expanded (by repository key string). Starts with all repos expanded when apps load.
+    @State private var expandedRepos: Set<String> = []
+
     public init(repoURLs: [URL] = [URL(string: "https://repository.apptesters.org/")!]) {
         _vm = StateObject(wrappedValue: RepoViewModel(sourceURLs: repoURLs))
     }
@@ -409,10 +412,14 @@ public struct AppsView: View {
         case .nameZA:
             return vm.apps.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedDescending }
         case .repoAZ:
+            // sort primarily by repo name, then app name
             return vm.apps.sorted {
-                let a = $0.repositoryName ?? ""
-                let b = $1.repositoryName ?? ""
-                return a.localizedCaseInsensitiveCompare(b) == .orderedAscending
+                let aRepo = $0.repositoryName ?? ""
+                let bRepo = $1.repositoryName ?? ""
+                if aRepo.localizedCaseInsensitiveCompare(bRepo) == .orderedSame {
+                    return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                }
+                return aRepo.localizedCaseInsensitiveCompare(bRepo) == .orderedAscending
             }
         case .dateNewOld:
             return vm.apps.sorted {
@@ -441,6 +448,7 @@ public struct AppsView: View {
         }
     }
 
+    // Filtered apps (search)
     private var filteredApps: [AltApp] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return sortedApps }
@@ -452,6 +460,31 @@ public struct AppsView: View {
             if let sub = app.subtitle, sub.lowercased().contains(lowered) { return true }
             if let repo = app.repositoryName, repo.lowercased().contains(lowered) { return true }
             return false
+        }
+    }
+
+    // Group apps by repository name (fallback to "Unknown Repository")
+    private var groupedApps: [String: [AltApp]] {
+        Dictionary(grouping: filteredApps, by: { $0.repositoryName ?? "Unknown Repository" })
+    }
+
+    // Decide an ordered list of repository keys to display. If sorting by repo, keep repo order alphabetical.
+    private var orderedRepoKeys: [String] {
+        let keys = Array(groupedApps.keys)
+        if sortOption == .repoAZ {
+            return keys.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        } else {
+            // keep stable order: repositories ordered by first occurrence in sortedApps
+            var order: [String] = []
+            for app in sortedApps {
+                let key = app.repositoryName ?? "Unknown Repository"
+                if !order.contains(key) { order.append(key) }
+            }
+            // include any keys that didn't appear (edge-case)
+            for k in keys where !order.contains(k) {
+                order.append(k)
+            }
+            return order
         }
     }
 
@@ -480,10 +513,8 @@ public struct AppsView: View {
                     .padding(10)
                     .background(.regularMaterial)
                     .cornerRadius(10)
-                    // make the search take flexible space but leave room for picker
                     .frame(maxWidth: .infinity)
 
-                    // Sort picker next to search bar
                     Picker(selection: $sortOption, label: Label("Sort", systemImage: "arrow.up.arrow.down")) {
                         ForEach(SortOption.allCases) { option in
                             Text(option.rawValue).tag(option)
@@ -494,7 +525,7 @@ public struct AppsView: View {
                     .padding(.vertical, 8)
                     .background(.regularMaterial)
                     .cornerRadius(10)
-                    .frame(minWidth: 170) // keep the picker reasonably wide
+                    .frame(minWidth: 170)
                 }
                 .padding(.horizontal)
                 .padding(.top, 8)
@@ -523,13 +554,67 @@ public struct AppsView: View {
                     }
                     .padding()
                 } else {
-                    List(filteredApps) { app in
-                        Button {
-                            selectedApp = app
-                        } label: {
-                            AppRowView(app: app)
+                    // List of grouped repositories
+                    List {
+                        ForEach(orderedRepoKeys, id: \.self) { repoKey in
+                            // header row
+                            Section {
+                                if expandedRepos.contains(repoKey) {
+                                    // show apps for this repo
+                                    ForEach(groupedApps[repoKey] ?? []) { app in
+                                        Button {
+                                            selectedApp = app
+                                        } label: {
+                                            AppRowView(app: app)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                } else {
+                                    // collapsed: show a compact preview (optional - show first 1 app)
+                                    if let first = groupedApps[repoKey]?.first {
+                                        Button {
+                                            selectedApp = first
+                                        } label: {
+                                            AppRowView(app: first)
+                                                .opacity(0.85)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            } header: {
+                                // Custom header with toggle
+                                HStack(spacing: 8) {
+                                    Button(action: {
+                                        withAnimation(.spring()) {
+                                            if expandedRepos.contains(repoKey) {
+                                                expandedRepos.remove(repoKey)
+                                            } else {
+                                                expandedRepos.insert(repoKey)
+                                            }
+                                        }
+                                    }) {
+                                        HStack(spacing: 8) {
+                                            Image(systemName: expandedRepos.contains(repoKey) ? "chevron.down" : "chevron.right")
+                                                .font(.system(size: 14, weight: .semibold))
+                                                .foregroundColor(.accentColor)
+                                                .frame(width: 18, height: 18)
+                                            VStack(alignment: .leading, spacing: 1) {
+                                                Text(repoKey)
+                                                    .font(.subheadline)
+                                                    .fontWeight(.semibold)
+                                                Text("\(groupedApps[repoKey]?.count ?? 0) app\( (groupedApps[repoKey]?.count ?? 0) == 1 ? "" : "s")")
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            Spacer()
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .padding(.vertical, 6)
+                                .contentShape(Rectangle())
+                            }
                         }
-                        .buttonStyle(.plain)
                     }
                     .listStyle(PlainListStyle())
                     .refreshable { vm.refresh() }
@@ -547,6 +632,21 @@ public struct AppsView: View {
                 }
                 .help("Refresh repository")
             }
+        }
+        // When apps change (or on appear), default to all repos expanded so they start maximised
+        .onAppear {
+            expandedRepos = Set(orderedRepoKeys)
+        }
+        .onChange(of: vm.apps) { _ in
+            expandedRepos = Set(orderedRepoKeys)
+        }
+        .onChange(of: searchText) { _ in
+            // If search modifies the repo list, ensure expansion state includes newly visible repos
+            expandedRepos.formUnion(orderedRepoKeys)
+        }
+        .onChange(of: sortOption) { _ in
+            // keep currently expanded repos where possible, but ensure new repos are included
+            expandedRepos.formUnion(orderedRepoKeys)
         }
     }
 }
