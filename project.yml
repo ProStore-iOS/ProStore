@@ -47,7 +47,5 @@ targets:
       - package: Zsign-Package
         product: ZsignSwift
       - package: ZIPFoundation
-
-
         product: ZIPFoundation
 
