@@ -143,24 +143,134 @@ public struct AltApp: Identifiable, Equatable {
 }
 
 
-// MARK: - ViewModel
+// MARK: - CachedApp
+public struct CachedApp: Identifiable {
+    public var id: String { app.id }
+    public let app: AltApp
+
+    // precomputed fields for fast filtering/sorting
+    public let nameLower: String
+    public let bundleLower: String
+    public let devLower: String?
+    public let subtitleLower: String?
+    public let repoName: String
+    public let parsedDate: Date?
+    public let sizeValue: Int?
+
+    public init(app: AltApp) {
+        self.app = app
+        self.nameLower = app.name.lowercased()
+        self.bundleLower = app.bundleIdentifier.lowercased()
+        self.devLower = app.developerName?.lowercased()
+        self.subtitleLower = app.subtitle?.lowercased()
+        self.repoName = app.repositoryName ?? "Unknown Repository"
+        self.parsedDate = appDate(for: app) // reuse helper
+        self.sizeValue = app.size
+    }
+}
+
+// MARK: - ViewModel (updated)
 @MainActor
 final class RepoViewModel: ObservableObject {
-    @Published var apps: [AltApp] = []
+    // raw apps
+    @Published private(set) var apps: [AltApp] = []
+
+    // cached wrapper for each app (pre-parsed)
+    @Published private(set) var cachedApps: [CachedApp] = []
+
+    // the final list that UI will use (already filtered + sorted)
+    @Published private(set) var displayedCachedApps: [CachedApp] = []
+
+    // loading, error
     @Published var isLoading: Bool = false
     @Published var errorMessage: String? = nil
 
+    // user-controllable search & sort
+    @Published var searchQuery: String = ""
+    @Published var selectedSort: SortOption = .nameAZ
+
     private let sourceURLs: [URL]   // <-- multiple sources
+    private var cancellables = Set<AnyCancellable>()
 
     init(sourceURLs: [URL]) {
         self.sourceURLs = sourceURLs
+
+        // Combine pipeline: debounce search/sort, react to cachedApps changes
+        Publishers.CombineLatest3($searchQuery.removeDuplicates(),
+                                  $selectedSort.removeDuplicates(by: { $0.rawValue == $1.rawValue }),
+                                  $cachedApps)
+            .debounce(for: .milliseconds(250), scheduler: RunLoop.main) // debounce both search & sort changes
+            .receive(on: DispatchQueue.global(qos: .userInitiated))     // process filtering/sorting off main
+            .map { (query, sort, cached) -> [CachedApp] in
+                let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let filtered: [CachedApp]
+                if q.isEmpty {
+                    filtered = cached
+                } else {
+                    filtered = cached.filter { c in
+                        if c.nameLower.contains(q) { return true }
+                        if c.bundleLower.contains(q) { return true }
+                        if let d = c.devLower, d.contains(q) { return true }
+                        if let s = c.subtitleLower, s.contains(q) { return true }
+                        if c.repoName.lowercased().contains(q) { return true }
+                        return false
+                    }
+                }
+
+                // Sorting using cached fields (fast)
+                let sorted: [CachedApp]
+                switch sort {
+                case .nameAZ:
+                    sorted = filtered.sorted { $0.nameLower < $1.nameLower }
+                case .nameZA:
+                    sorted = filtered.sorted { $0.nameLower > $1.nameLower }
+                case .repoAZ:
+                    // sort by repo then name
+                    sorted = filtered.sorted {
+                        if $0.repoName.localizedCaseInsensitiveCompare($1.repoName) == .orderedSame {
+                            return $0.nameLower < $1.nameLower
+                        }
+                        return $0.repoName.localizedCaseInsensitiveCompare($1.repoName) == .orderedAscending
+                    }
+                case .dateNewOld:
+                    sorted = filtered.sorted {
+                        let da = $0.parsedDate ?? Date.distantPast
+                        let db = $1.parsedDate ?? Date.distantPast
+                        return da > db
+                    }
+                case .dateOldNew:
+                    sorted = filtered.sorted {
+                        let da = $0.parsedDate ?? Date.distantPast
+                        let db = $1.parsedDate ?? Date.distantPast
+                        return da < db
+                    }
+                case .sizeLowHigh:
+                    sorted = filtered.sorted {
+                        let sa = $0.sizeValue ?? Int.max
+                        let sb = $1.sizeValue ?? Int.max
+                        return sa < sb
+                    }
+                case .sizeHighLow:
+                    sorted = filtered.sorted {
+                        let sa = $0.sizeValue ?? Int.min
+                        let sb = $1.sizeValue ?? Int.min
+                        return sa > sb
+                    }
+                }
+                return sorted
+            }
+            .receive(on: RunLoop.main) // publish results to main
+            .sink { [weak self] result in
+                self?.displayedCachedApps = result
+            }
+            .store(in: &cancellables)
+
         Task { await loadAllSources() }
     }
 
     func loadAllSources() async {
-        isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
+        await MainActor.run { isLoading = true; errorMessage = nil }
+        defer { Task { await MainActor.run { self.isLoading = false } } }
 
         var combinedApps: [AltApp] = []
         var errors: [String] = []
@@ -177,7 +287,6 @@ final class RepoViewModel: ObservableObject {
 
                 let decoder = JSONDecoder()
 
-                // 1) If top-level AltSource that contains "apps"
                 if let source = try? decoder.decode(AltSource.self, from: data), let rawApps = source.apps {
                     let repoName = source.META?.repoName ?? source.name
                     let mapped = rawApps.map { raw -> AltApp in
@@ -201,7 +310,6 @@ final class RepoViewModel: ObservableObject {
                     continue
                 }
 
-                // 2) If JSON is an array of app objects (raw)
                 if let rawArray = try? decoder.decode([AppRaw].self, from: data) {
                     let mapped = rawArray.map { raw -> AltApp in
                         AltApp(
@@ -224,7 +332,6 @@ final class RepoViewModel: ObservableObject {
                     continue
                 }
 
-                // 3) If JSON has a top-level "apps" property but different wrapper
                 if let jsonObject = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let appsFragment = jsonObject["apps"] {
                     let fragmentData = try JSONSerialization.data(withJSONObject: appsFragment)
@@ -257,7 +364,7 @@ final class RepoViewModel: ObservableObject {
             }
         }
 
-        // Optionally dedupe by bundleIdentifier (keep first occurrence)
+        // dedupe by bundleIdentifier (keep first occurrence)
         var seen: Set<String> = []
         let deduped = combinedApps.filter { app in
             if seen.contains(app.bundleIdentifier) { return false }
@@ -265,9 +372,22 @@ final class RepoViewModel: ObservableObject {
             return true
         }
 
-        self.apps = deduped
+        await MainActor.run {
+            self.apps = deduped
+        }
+
+        // compute cachedApps off-main
+        Task.detached { [deduped] in
+            let cached = deduped.map { CachedApp(app: $0) }
+            await MainActor.run {
+                self.cachedApps = cached
+            }
+        }
+
         if !errors.isEmpty {
-            self.errorMessage = errors.joined(separator: "\n")
+            await MainActor.run {
+                self.errorMessage = errors.joined(separator: "\n")
+            }
         }
     }
 
@@ -276,140 +396,11 @@ final class RepoViewModel: ObservableObject {
     }
 }
 
-// MARK: - RetryAsyncImage (stable layout + retry)
-struct RetryAsyncImage<Content: View, Placeholder: View, Failure: View>: View {
-    let url: URL?
-    let maxAttempts: Int
-    let size: CGSize?
-    let content: (Image) -> Content
-    let placeholder: () -> Placeholder
-    let failure: () -> Failure
-
-    @State private var currentAttempt: Int = 0
-    @State private var retryTrigger: UUID = UUID()
-
-    private var modifiedURL: URL? {
-        guard let url = url else { return nil }
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        var query = components?.queryItems ?? []
-        query.removeAll(where: { $0.name == "retryAttempt" })
-        query.append(URLQueryItem(name: "retryAttempt", value: "\(currentAttempt)"))
-        components?.queryItems = query
-        return components?.url
-    }
-
-    init(
-        url: URL?,
-        size: CGSize? = nil,
-        maxAttempts: Int = 3,
-        @ViewBuilder content: @escaping (Image) -> Content,
-        @ViewBuilder placeholder: @escaping () -> Placeholder,
-        @ViewBuilder failure: @escaping () -> Failure
-    ) {
-        self.url = url
-        self.size = size
-        self.maxAttempts = maxAttempts
-        self.content = content
-        self.placeholder = placeholder
-        self.failure = failure
-    }
-
-    var body: some View {
-        let frameView = Group {
-            if let modifiedURL = modifiedURL {
-                AsyncImage(url: modifiedURL) { phase in
-                    switch phase {
-                    case .empty:
-                        placeholder()
-                    case .success(let image):
-                        content(image)
-                    case .failure:
-                        if currentAttempt < maxAttempts - 1 {
-                            placeholder()
-                                .task {
-                                    try? await Task.sleep(nanoseconds: 250_000_000)
-                                    await MainActor.run {
-                                        currentAttempt += 1
-                                        retryTrigger = UUID()
-                                    }
-                                }
-                        } else {
-                            failure()
-                        }
-                    @unknown default:
-                        placeholder()
-                    }
-                }
-            } else {
-                failure()
-            }
-        }
-
-        if let size = size {
-            frameView
-                .frame(width: size.width, height: size.height)
-                .clipped()
-        } else {
-            frameView
-        }
-    }
-}
-
-// MARK: - Sorting
-enum SortOption: String, CaseIterable, Identifiable {
-    case nameAZ = "Name: A - Z"
-    case nameZA = "Name: Z - A"
-    case repoAZ = "Repository"
-    case dateNewOld = "Date: New - Old"
-    case dateOldNew = "Date: Old - New"
-    case sizeLowHigh = "Size: Low - High"
-    case sizeHighLow = "Size: High - Low"
-
-    var id: String { self.rawValue }
-}
-
-// Helper for parsing dates
-fileprivate func appDate(for app: AltApp) -> Date? {
-    // Prefer fullDate (format like "20251126100919"), else try versionDate like "2025-11-26"
-    if let full = app.fullDate {
-        // try parse yyyyMMddHHmmss or yyyyMMdd
-        let len = full.count
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        if len >= 14 {
-            formatter.dateFormat = "yyyyMMddHHmmss"
-        } else if len == 8 {
-            formatter.dateFormat = "yyyyMMdd"
-        } else {
-            // fallback attempt
-            formatter.dateFormat = "yyyyMMddHHmmss"
-        }
-        if let d = formatter.date(from: full) { return d }
-    }
-
-    if let vd = app.versionDate {
-        let formatter = ISO8601DateFormatter()
-        // attempt strict "yyyy-MM-dd"
-        if let date = formatter.date(from: vd + "T00:00:00Z") {
-            return date
-        }
-        // fallback try DateFormatter
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.dateFormat = "yyyy-MM-dd"
-        if let d = df.date(from: vd) { return d }
-    }
-
-    return nil
-}
-
-// MARK: - AppsView
+// MARK: - AppsView (updated to use cached + vm search/sort)
 public struct AppsView: View {
     @StateObject private var vm: RepoViewModel
-    @State private var searchText: String = ""
     @FocusState private var searchFieldFocused: Bool
     @State private var selectedApp: AltApp? = nil
-    @State private var sortOption: SortOption = .nameAZ
 
     /// Which repositories are expanded (by repository key string).
     @State private var expandedRepos: Set<String> = []
@@ -418,74 +409,21 @@ public struct AppsView: View {
         _vm = StateObject(wrappedValue: RepoViewModel(sourceURLs: repoURLs))
     }
 
-    private var sortedApps: [AltApp] {
-        switch sortOption {
-        case .nameAZ:
-            return vm.apps.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        case .nameZA:
-            return vm.apps.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedDescending }
-        case .repoAZ:
-            return vm.apps.sorted {
-                let aRepo = $0.repositoryName ?? ""
-                let bRepo = $1.repositoryName ?? ""
-                if aRepo.localizedCaseInsensitiveCompare(bRepo) == .orderedSame {
-                    return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-                }
-                return aRepo.localizedCaseInsensitiveCompare(bRepo) == .orderedAscending
-            }
-        case .dateNewOld:
-            return vm.apps.sorted {
-                let da = appDate(for: $0) ?? Date.distantPast
-                let db = appDate(for: $1) ?? Date.distantPast
-                return da > db
-            }
-        case .dateOldNew:
-            return vm.apps.sorted {
-                let da = appDate(for: $0) ?? Date.distantPast
-                let db = appDate(for: $1) ?? Date.distantPast
-                return da < db
-            }
-        case .sizeLowHigh:
-            return vm.apps.sorted {
-                let sa = $0.size ?? Int.max
-                let sb = $1.size ?? Int.max
-                return sa < sb
-            }
-        case .sizeHighLow:
-            return vm.apps.sorted {
-                let sa = $0.size ?? Int.min
-                let sb = $1.size ?? Int.min
-                return sa > sb
-            }
-        }
-    }
+    // MARK: - Helpers using cached data (fast)
+    private var cachedList: [CachedApp] { vm.displayedCachedApps }
 
-    private var filteredApps: [AltApp] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return sortedApps }
-        let lowered = query.lowercased()
-        return sortedApps.filter { app in
-            if app.name.lowercased().contains(lowered) { return true }
-            if app.bundleIdentifier.lowercased().contains(lowered) { return true }
-            if let dev = app.developerName, dev.lowercased().contains(lowered) { return true }
-            if let sub = app.subtitle, sub.lowercased().contains(lowered) { return true }
-            if let repo = app.repositoryName, repo.lowercased().contains(lowered) { return true }
-            return false
-        }
-    }
-
-    private var groupedApps: [String: [AltApp]] {
-        Dictionary(grouping: filteredApps, by: { $0.repositoryName ?? "Unknown Repository" })
+    private var groupedCached: [String: [CachedApp]] {
+        Dictionary(grouping: cachedList, by: { $0.repoName })
     }
 
     private var orderedRepoKeys: [String] {
-        let keys = Array(groupedApps.keys)
-        if sortOption == .repoAZ {
+        let keys = Array(groupedCached.keys)
+        if vm.selectedSort == .repoAZ {
             return keys.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
         } else {
             var order: [String] = []
-            for app in sortedApps {
-                let key = app.repositoryName ?? "Unknown Repository"
+            for c in cachedList {
+                let key = c.repoName
                 if !order.contains(key) { order.append(key) }
             }
             for k in keys where !order.contains(k) {
@@ -496,20 +434,20 @@ public struct AppsView: View {
     }
 
     // MARK: - View pieces
-
     @ViewBuilder private var searchAndSortBar: some View {
         if !(vm.isLoading && vm.apps.isEmpty) {
             HStack(spacing: 8) {
                 HStack {
                     Image(systemName: "magnifyingglass")
                         .foregroundColor(.secondary)
-                    TextField("Search apps, developer or bundle ID", text: $searchText)
+                    TextField("Search apps, developer or bundle ID", text: $vm.searchQuery)
                         .textInputAutocapitalization(.never)
                         .disableAutocorrection(true)
                         .focused($searchFieldFocused)
                         .submitLabel(.search)
-                    if !searchText.isEmpty {
-                        Button(action: { searchText = "" }) {
+
+                    if !vm.searchQuery.isEmpty {
+                        Button(action: { vm.searchQuery = "" }) {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundColor(.secondary)
                         }
@@ -521,7 +459,7 @@ public struct AppsView: View {
                 .cornerRadius(10)
                 .frame(maxWidth: .infinity)
 
-                Picker(selection: $sortOption, label: Label("Sort", systemImage: "arrow.up.arrow.down")) {
+                Picker(selection: $vm.selectedSort, label: Label("Sort", systemImage: "arrow.up.arrow.down")) {
                     ForEach(SortOption.allCases) { option in
                         Text(option.rawValue).tag(option)
                     }
@@ -582,7 +520,7 @@ public struct AppsView: View {
                         Text(repoKey)
                             .font(.subheadline)
                             .fontWeight(.semibold)
-                        Text("\(groupedApps[repoKey]?.count ?? 0) app\( (groupedApps[repoKey]?.count ?? 0) == 1 ? "" : "s")")
+                        Text("\(groupedCached[repoKey]?.count ?? 0) app\( (groupedCached[repoKey]?.count ?? 0) == 1 ? "" : "s")")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -596,11 +534,10 @@ public struct AppsView: View {
     }
 
     @ViewBuilder private func repoSection(_ repoKey: String) -> some View {
-        // NOTE: If collapsed, show header only (no app rows)
         Section {
             if expandedRepos.contains(repoKey) {
-                ForEach(groupedApps[repoKey] ?? []) { app in
-                    Button { selectedApp = app } label: { AppRowView(app: app) }
+                ForEach(groupedCached[repoKey] ?? []) { cached in
+                    Button { selectedApp = cached.app } label: { AppRowView(app: cached.app) }
                         .buttonStyle(.plain)
                 }
             } else {
@@ -613,7 +550,7 @@ public struct AppsView: View {
     }
 
     @ViewBuilder private var listView: some View {
-        if sortOption == .repoAZ {
+        if vm.selectedSort == .repoAZ {
             List {
                 ForEach(orderedRepoKeys, id: \.self) { repoKey in
                     repoSection(repoKey)
@@ -622,10 +559,9 @@ public struct AppsView: View {
             .listStyle(PlainListStyle())
             .refreshable { vm.refresh() }
         } else {
-            // flat list for all other sort modes
             List {
-                ForEach(filteredApps) { app in
-                    Button { selectedApp = app } label: { AppRowView(app: app) }
+                ForEach(cachedList) { cached in
+                    Button { selectedApp = cached.app } label: { AppRowView(app: cached.app) }
                         .buttonStyle(.plain)
                 }
             }
@@ -671,21 +607,18 @@ public struct AppsView: View {
             }
         }
         .onAppear {
-            expandedRepos = (sortOption == .repoAZ) ? Set(orderedRepoKeys) : []
+            // init expansion only when repo sort selected
+            expandedRepos = (vm.selectedSort == .repoAZ) ? Set(orderedRepoKeys) : []
         }
-        .onChange(of: vm.apps) { _ in
-            if sortOption == .repoAZ {
-                expandedRepos = Set(orderedRepoKeys)
+        // update expanded repos when displayed data changes or sort toggles
+        .onReceive(vm.$displayedCachedApps) { _ in
+            if vm.selectedSort == .repoAZ {
+                expandedRepos.formUnion(orderedRepoKeys)
             } else {
                 expandedRepos.removeAll()
             }
         }
-        .onChange(of: searchText) { _ in
-            if sortOption == .repoAZ {
-                expandedRepos.formUnion(orderedRepoKeys)
-            }
-        }
-        .onChange(of: sortOption) { newOption in
+        .onChange(of: vm.selectedSort) { newOption in
             if newOption == .repoAZ {
                 expandedRepos.formUnion(orderedRepoKeys)
             } else {
