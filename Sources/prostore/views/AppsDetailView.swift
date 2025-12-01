@@ -72,11 +72,27 @@ public struct AppDetailView: View {
                         Text(app.name)
                             .font(.title2)
                             .bold()
-                        if let dev = app.developerName {
-                            Text(dev)
+
+                        // Developer name (if available) with repo name underneath.
+                        if let dev = app.developerName, !dev.isEmpty {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(dev)
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+
+                                if let repo = app.repositoryName, !repo.isEmpty {
+                                    Text(repo)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        } else if let repo = app.repositoryName, !repo.isEmpty {
+                            // If developer is missing, still show the repository name under the title
+                            Text(repo)
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }
+
                         Text(app.bundleIdentifier)
                             .font(.caption)
                             .foregroundColor(.secondary)
