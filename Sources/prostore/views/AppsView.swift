@@ -630,19 +630,3 @@ private struct AppRowView: View {
         .contentShape(Rectangle())
     }
 }
-
-// MARK: - AppDetailView (placeholder — keep your existing implementation or replace)
-struct AppDetailView: View {
-    let app: AltApp
-
-    var body: some View {
-        VStack {
-            Text(app.name).font(.largeTitle)
-            if let repo = app.repositoryName {
-                Text("Repo: \(repo)").font(.subheadline).foregroundColor(.secondary)
-            }
-            Spacer()
-        }
-        .padding()
-    }
-}
