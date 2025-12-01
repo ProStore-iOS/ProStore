@@ -411,14 +411,12 @@ public struct AppsView: View {
     @State private var selectedApp: AltApp? = nil
     @State private var sortOption: SortOption = .nameAZ
 
-    /// Which repositories are expanded (by repository key string). Starts with all repos expanded when apps load.
+    /// Which repositories are expanded (by repository key string).
     @State private var expandedRepos: Set<String> = []
 
     public init(repoURLs: [URL] = [URL(string: "https://repository.apptesters.org/")!]) {
         _vm = StateObject(wrappedValue: RepoViewModel(sourceURLs: repoURLs))
     }
-
-    // MARK: - Smaller computed helpers to keep `body` tiny
 
     private var sortedApps: [AltApp] {
         switch sortOption {
@@ -598,6 +596,7 @@ public struct AppsView: View {
     }
 
     @ViewBuilder private func repoSection(_ repoKey: String) -> some View {
+        // NOTE: If collapsed, show header only (no app rows)
         Section {
             if expandedRepos.contains(repoKey) {
                 ForEach(groupedApps[repoKey] ?? []) { app in
@@ -605,10 +604,8 @@ public struct AppsView: View {
                         .buttonStyle(.plain)
                 }
             } else {
-                if let first = groupedApps[repoKey]?.first {
-                    Button { selectedApp = first } label: { AppRowView(app: first).opacity(0.85) }
-                        .buttonStyle(.plain)
-                }
+                // collapsed: intentionally show no rows
+                EmptyView()
             }
         } header: {
             repoHeader(repoKey)
@@ -616,16 +613,28 @@ public struct AppsView: View {
     }
 
     @ViewBuilder private var listView: some View {
-        List {
-            ForEach(orderedRepoKeys, id: \.self) { repoKey in
-                repoSection(repoKey)
+        if sortOption == .repoAZ {
+            List {
+                ForEach(orderedRepoKeys, id: \.self) { repoKey in
+                    repoSection(repoKey)
+                }
             }
+            .listStyle(PlainListStyle())
+            .refreshable { vm.refresh() }
+        } else {
+            // flat list for all other sort modes
+            List {
+                ForEach(filteredApps) { app in
+                    Button { selectedApp = app } label: { AppRowView(app: app) }
+                        .buttonStyle(.plain)
+                }
+            }
+            .listStyle(PlainListStyle())
+            .refreshable { vm.refresh() }
         }
-        .listStyle(PlainListStyle())
-        .refreshable { vm.refresh() }
     }
 
-    // MARK: - Body stays small and easy to type-check
+    // MARK: - Body
     public var body: some View {
         VStack(spacing: 0) {
             searchAndSortBar
@@ -662,16 +671,26 @@ public struct AppsView: View {
             }
         }
         .onAppear {
-            expandedRepos = Set(orderedRepoKeys)
+            expandedRepos = (sortOption == .repoAZ) ? Set(orderedRepoKeys) : []
         }
         .onChange(of: vm.apps) { _ in
-            expandedRepos = Set(orderedRepoKeys)
+            if sortOption == .repoAZ {
+                expandedRepos = Set(orderedRepoKeys)
+            } else {
+                expandedRepos.removeAll()
+            }
         }
         .onChange(of: searchText) { _ in
-            expandedRepos.formUnion(orderedRepoKeys)
+            if sortOption == .repoAZ {
+                expandedRepos.formUnion(orderedRepoKeys)
+            }
         }
-        .onChange(of: sortOption) { _ in
-            expandedRepos.formUnion(orderedRepoKeys)
+        .onChange(of: sortOption) { newOption in
+            if newOption == .repoAZ {
+                expandedRepos.formUnion(orderedRepoKeys)
+            } else {
+                expandedRepos.removeAll()
+            }
         }
     }
 }
