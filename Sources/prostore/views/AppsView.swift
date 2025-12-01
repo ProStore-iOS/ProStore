@@ -642,29 +642,41 @@ private struct AppRowView: View {
                     .frame(width: iconSize.width, height: iconSize.height)
 
                 if let iconURL = app.iconURL {
-                    RetryAsyncImage(
-                        url: iconURL,
-                        size: iconSize,
-                        maxAttempts: 3,
-                        content: { image in
-                            image
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: iconSize.width, height: iconSize.height)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                        },
-                        placeholder: {
-                            ProgressView()
-                                .frame(width: iconSize.width, height: iconSize.height)
-                        },
-                        failure: {
-                            Image(systemName: "app")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 28, height: 28)
-                                .foregroundColor(.secondary)
-                        }
-                    )
+                    if let cached = ImageCache.shared.get(for: iconURL) {
+                        cached
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: iconSize.width, height: iconSize.height)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    } else {
+                        RetryAsyncImage(
+                            url: iconURL,
+                            size: iconSize,
+                            maxAttempts: 3,
+                            content: { image in
+                                if let uiImage = image.asUIImage {
+                                    ImageCache.shared.set(uiImage, for: iconURL)
+                                }
+
+                                image
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: iconSize.width, height: iconSize.height)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                            },
+                            placeholder: {
+                                ProgressView()
+                                    .frame(width: iconSize.width, height: iconSize.height)
+                            },
+                            failure: {
+                                Image(systemName: "app")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 28, height: 28)
+                                    .foregroundColor(.secondary)
+                            }
+                        )
+                }
                 } else {
                     Image(systemName: "app")
                         .resizable()

@@ -19,3 +19,15 @@ final class ImageCache {
         return nil
     }
 }
+
+extension Image {
+    var asUIImage: UIImage? {
+        let mirror = Mirror(reflecting: self)
+        for child in mirror.children {
+            if let uiImage = child.value as? UIImage {
+                return uiImage
+            }
+        }
+        return nil
+    }
+}
