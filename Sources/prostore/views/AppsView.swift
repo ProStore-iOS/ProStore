@@ -376,7 +376,7 @@ fileprivate func appDate(for app: AltApp) -> Date? {
     if let vd = app.versionDate {
         let formatter = ISO8601DateFormatter()
         // attempt strict "yyyy-MM-dd"
-        if let date = ISO8601DateFormatter().date(from: vd + "T00:00:00Z") {
+        if let date = formatter.date(from: vd + "T00:00:00Z") {
             return date
         }
         // fallback try DateFormatter
@@ -404,7 +404,8 @@ public struct AppsView: View {
         _vm = StateObject(wrappedValue: RepoViewModel(sourceURLs: repoURLs))
     }
 
-    // Sort the vm.apps according to the selected sort option
+    // MARK: - Smaller computed helpers to keep `body` tiny
+
     private var sortedApps: [AltApp] {
         switch sortOption {
         case .nameAZ:
@@ -412,7 +413,6 @@ public struct AppsView: View {
         case .nameZA:
             return vm.apps.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedDescending }
         case .repoAZ:
-            // sort primarily by repo name, then app name
             return vm.apps.sorted {
                 let aRepo = $0.repositoryName ?? ""
                 let bRepo = $1.repositoryName ?? ""
@@ -448,7 +448,6 @@ public struct AppsView: View {
         }
     }
 
-    // Filtered apps (search)
     private var filteredApps: [AltApp] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return sortedApps }
@@ -463,24 +462,20 @@ public struct AppsView: View {
         }
     }
 
-    // Group apps by repository name (fallback to "Unknown Repository")
     private var groupedApps: [String: [AltApp]] {
         Dictionary(grouping: filteredApps, by: { $0.repositoryName ?? "Unknown Repository" })
     }
 
-    // Decide an ordered list of repository keys to display. If sorting by repo, keep repo order alphabetical.
     private var orderedRepoKeys: [String] {
         let keys = Array(groupedApps.keys)
         if sortOption == .repoAZ {
             return keys.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
         } else {
-            // keep stable order: repositories ordered by first occurrence in sortedApps
             var order: [String] = []
             for app in sortedApps {
                 let key = app.repositoryName ?? "Unknown Repository"
                 if !order.contains(key) { order.append(key) }
             }
-            // include any keys that didn't appear (edge-case)
             for k in keys where !order.contains(k) {
                 order.append(k)
             }
@@ -488,136 +483,146 @@ public struct AppsView: View {
         }
     }
 
+    // MARK: - View pieces
+
+    @ViewBuilder private var searchAndSortBar: some View {
+        if !(vm.isLoading && vm.apps.isEmpty) {
+            HStack(spacing: 8) {
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                    TextField("Search apps, developer or bundle ID", text: $searchText)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                        .focused($searchFieldFocused)
+                        .submitLabel(.search)
+                    if !searchText.isEmpty {
+                        Button(action: { searchText = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(10)
+                .background(.regularMaterial)
+                .cornerRadius(10)
+                .frame(maxWidth: .infinity)
+
+                Picker(selection: $sortOption, label: Label("Sort", systemImage: "arrow.up.arrow.down")) {
+                    ForEach(SortOption.allCases) { option in
+                        Text(option.rawValue).tag(option)
+                    }
+                }
+                .pickerStyle(MenuPickerStyle())
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(.regularMaterial)
+                .cornerRadius(10)
+                .frame(minWidth: 170)
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+        }
+    }
+
+    @ViewBuilder private var loadingView: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text("Loading apps...")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+    }
+
+    @ViewBuilder private func errorView(_ error: String) -> some View {
+        VStack(spacing: 12) {
+            Text("Error")
+                .font(.headline)
+            Text(error)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Retry") { vm.refresh() }
+                .padding(.top, 8)
+        }
+        .padding()
+    }
+
+    @ViewBuilder private func repoHeader(_ repoKey: String) -> some View {
+        HStack(spacing: 8) {
+            Button(action: {
+                withAnimation(.spring()) {
+                    if expandedRepos.contains(repoKey) {
+                        expandedRepos.remove(repoKey)
+                    } else {
+                        expandedRepos.insert(repoKey)
+                    }
+                }
+            }) {
+                HStack(spacing: 8) {
+                    Image(systemName: expandedRepos.contains(repoKey) ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.accentColor)
+                        .frame(width: 18, height: 18)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(repoKey)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Text("\(groupedApps[repoKey]?.count ?? 0) app\( (groupedApps[repoKey]?.count ?? 0) == 1 ? "" : "s")")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder private func repoSection(_ repoKey: String) -> some View {
+        Section {
+            if expandedRepos.contains(repoKey) {
+                ForEach(groupedApps[repoKey] ?? []) { app in
+                    Button { selectedApp = app } label: { AppRowView(app: app) }
+                        .buttonStyle(.plain)
+                }
+            } else {
+                if let first = groupedApps[repoKey]?.first {
+                    Button { selectedApp = first } label: { AppRowView(app: first).opacity(0.85) }
+                        .buttonStyle(.plain)
+                }
+            }
+        } header: {
+            repoHeader(repoKey)
+        }
+    }
+
+    @ViewBuilder private var listView: some View {
+        List {
+            ForEach(orderedRepoKeys, id: \.self) { repoKey in
+                repoSection(repoKey)
+            }
+        }
+        .listStyle(PlainListStyle())
+        .refreshable { vm.refresh() }
+    }
+
+    // MARK: - Body stays small and easy to type-check
     public var body: some View {
         VStack(spacing: 0) {
+            searchAndSortBar
 
-            // Search + Sort Bar (hidden during initial load)
-            if !(vm.isLoading && vm.apps.isEmpty) {
-                HStack(spacing: 8) {
-                    HStack {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundColor(.secondary)
-                        TextField("Search apps, developer or bundle ID", text: $searchText)
-                            .textInputAutocapitalization(.never)
-                            .disableAutocorrection(true)
-                            .focused($searchFieldFocused)
-                            .submitLabel(.search)
-                        if !searchText.isEmpty {
-                            Button(action: { searchText = "" }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(10)
-                    .background(.regularMaterial)
-                    .cornerRadius(10)
-                    .frame(maxWidth: .infinity)
-
-                    Picker(selection: $sortOption, label: Label("Sort", systemImage: "arrow.up.arrow.down")) {
-                        ForEach(SortOption.allCases) { option in
-                            Text(option.rawValue).tag(option)
-                        }
-                    }
-                    .pickerStyle(MenuPickerStyle())
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(.regularMaterial)
-                    .cornerRadius(10)
-                    .frame(minWidth: 170)
-                }
-                .padding(.horizontal)
-                .padding(.top, 8)
-            }
-
-            // Content
             Group {
                 if vm.isLoading && vm.apps.isEmpty {
-                    VStack(spacing: 12) {
-                        ProgressView()
-                        Text("Loading apps...")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
+                    loadingView
                 } else if let error = vm.errorMessage, vm.apps.isEmpty {
-                    VStack(spacing: 12) {
-                        Text("Error")
-                            .font(.headline)
-                        Text(error)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                        Button("Retry") { vm.refresh() }
-                            .padding(.top, 8)
-                    }
-                    .padding()
+                    errorView(error)
                 } else {
-                    // List of grouped repositories
-                    List {
-                        ForEach(orderedRepoKeys, id: \.self) { repoKey in
-                            // header row
-                            Section {
-                                if expandedRepos.contains(repoKey) {
-                                    // show apps for this repo
-                                    ForEach(groupedApps[repoKey] ?? []) { app in
-                                        Button {
-                                            selectedApp = app
-                                        } label: {
-                                            AppRowView(app: app)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                } else {
-                                    // collapsed: show a compact preview (optional - show first 1 app)
-                                    if let first = groupedApps[repoKey]?.first {
-                                        Button {
-                                            selectedApp = first
-                                        } label: {
-                                            AppRowView(app: first)
-                                                .opacity(0.85)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                            } header: {
-                                // Custom header with toggle
-                                HStack(spacing: 8) {
-                                    Button(action: {
-                                        withAnimation(.spring()) {
-                                            if expandedRepos.contains(repoKey) {
-                                                expandedRepos.remove(repoKey)
-                                            } else {
-                                                expandedRepos.insert(repoKey)
-                                            }
-                                        }
-                                    }) {
-                                        HStack(spacing: 8) {
-                                            Image(systemName: expandedRepos.contains(repoKey) ? "chevron.down" : "chevron.right")
-                                                .font(.system(size: 14, weight: .semibold))
-                                                .foregroundColor(.accentColor)
-                                                .frame(width: 18, height: 18)
-                                            VStack(alignment: .leading, spacing: 1) {
-                                                Text(repoKey)
-                                                    .font(.subheadline)
-                                                    .fontWeight(.semibold)
-                                                Text("\(groupedApps[repoKey]?.count ?? 0) app\( (groupedApps[repoKey]?.count ?? 0) == 1 ? "" : "s")")
-                                                    .font(.caption)
-                                                    .foregroundColor(.secondary)
-                                            }
-                                            Spacer()
-                                        }
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                                .padding(.vertical, 6)
-                                .contentShape(Rectangle())
-                            }
-                        }
-                    }
-                    .listStyle(PlainListStyle())
-                    .refreshable { vm.refresh() }
+                    listView
                 }
             }
             .padding(.top, 8)
@@ -626,14 +631,22 @@ public struct AppsView: View {
             AppDetailView(app: app)
         }
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
                 Button(action: { vm.refresh() }) {
                     Image(systemName: "arrow.clockwise")
                 }
-                .help("Refresh repository")
+                Button(action: {
+                    withAnimation(.spring()) { expandedRepos = Set(orderedRepoKeys) }
+                }) {
+                    Image(systemName: "rectangle.expand.vertical")
+                }
+                Button(action: {
+                    withAnimation(.spring()) { expandedRepos.removeAll() }
+                }) {
+                    Image(systemName: "rectangle.compress.vertical")
+                }
             }
         }
-        // When apps change (or on appear), default to all repos expanded so they start maximised
         .onAppear {
             expandedRepos = Set(orderedRepoKeys)
         }
@@ -641,11 +654,9 @@ public struct AppsView: View {
             expandedRepos = Set(orderedRepoKeys)
         }
         .onChange(of: searchText) { _ in
-            // If search modifies the repo list, ensure expansion state includes newly visible repos
             expandedRepos.formUnion(orderedRepoKeys)
         }
         .onChange(of: sortOption) { _ in
-            // keep currently expanded repos where possible, but ensure new repos are included
             expandedRepos.formUnion(orderedRepoKeys)
         }
     }
