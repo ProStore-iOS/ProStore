@@ -395,6 +395,132 @@ final class RepoViewModel: ObservableObject {
         Task { await loadAllSources() }
     }
 }
+// MARK: - RetryAsyncImage (stable layout + retry)
+struct RetryAsyncImage<Content: View, Placeholder: View, Failure: View>: View {
+    let url: URL?
+    let maxAttempts: Int
+    let size: CGSize?
+    let content: (Image) -> Content
+    let placeholder: () -> Placeholder
+    let failure: () -> Failure
+
+    @State private var currentAttempt: Int = 0
+    @State private var retryTrigger: UUID = UUID()
+
+    private var modifiedURL: URL? {
+        guard let url = url else { return nil }
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        var query = components?.queryItems ?? []
+        query.removeAll(where: { $0.name == "retryAttempt" })
+        query.append(URLQueryItem(name: "retryAttempt", value: "\(currentAttempt)"))
+        components?.queryItems = query
+        return components?.url
+    }
+
+    init(
+        url: URL?,
+        size: CGSize? = nil,
+        maxAttempts: Int = 3,
+        @ViewBuilder content: @escaping (Image) -> Content,
+        @ViewBuilder placeholder: @escaping () -> Placeholder,
+        @ViewBuilder failure: @escaping () -> Failure
+    ) {
+        self.url = url
+        self.size = size
+        self.maxAttempts = maxAttempts
+        self.content = content
+        self.placeholder = placeholder
+        self.failure = failure
+    }
+
+    var body: some View {
+        let frameView = Group {
+            if let modifiedURL = modifiedURL {
+                AsyncImage(url: modifiedURL) { phase in
+                    switch phase {
+                    case .empty:
+                        placeholder()
+                    case .success(let image):
+                        content(image)
+                    case .failure:
+                        if currentAttempt < maxAttempts - 1 {
+                            placeholder()
+                                .task {
+                                    try? await Task.sleep(nanoseconds: 250_000_000)
+                                    await MainActor.run {
+                                        currentAttempt += 1
+                                        retryTrigger = UUID()
+                                    }
+                                }
+                        } else {
+                            failure()
+                        }
+                    @unknown default:
+                        placeholder()
+                    }
+                }
+            } else {
+                failure()
+            }
+        }
+
+        if let size = size {
+            frameView
+                .frame(width: size.width, height: size.height)
+                .clipped()
+        } else {
+            frameView
+        }
+    }
+}
+
+// Helper for parsing dates
+fileprivate func appDate(for app: AltApp) -> Date? {
+    // Prefer fullDate (format like "20251126100919"), else try versionDate like "2025-11-26"
+    if let full = app.fullDate {
+        // try parse yyyyMMddHHmmss or yyyyMMdd
+        let len = full.count
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        if len >= 14 {
+            formatter.dateFormat = "yyyyMMddHHmmss"
+        } else if len == 8 {
+            formatter.dateFormat = "yyyyMMdd"
+        } else {
+            // fallback attempt
+            formatter.dateFormat = "yyyyMMddHHmmss"
+        }
+        if let d = formatter.date(from: full) { return d }
+    }
+
+    if let vd = app.versionDate {
+        let formatter = ISO8601DateFormatter()
+        // attempt strict "yyyy-MM-dd"
+        if let date = formatter.date(from: vd + "T00:00:00Z") {
+            return date
+        }
+        // fallback try DateFormatter
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.dateFormat = "yyyy-MM-dd"
+        if let d = df.date(from: vd) { return d }
+    }
+
+    return nil
+}
+
+// MARK: - Sorting
+enum SortOption: String, CaseIterable, Identifiable {
+    case nameAZ = "Name: A - Z"
+    case nameZA = "Name: Z - A"
+    case repoAZ = "Repository"
+    case dateNewOld = "Date: New - Old"
+    case dateOldNew = "Date: Old - New"
+    case sizeLowHigh = "Size: Low - High"
+    case sizeHighLow = "Size: High - Low"
+
+    var id: String { self.rawValue }
+}
 
 // MARK: - AppsView (updated to use cached + vm search/sort)
 public struct AppsView: View {
