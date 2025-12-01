@@ -70,8 +70,8 @@ struct UpdaterWebView: UIViewRepresentable {
         // Send local notification
         private func sendUpdateNotification() {
             let content = UNMutableNotificationContent()
-            content.title = "ProStore Update"
-            content.body = "ProStore will now update!"
+            content.title = "ProStore"
+            content.body = "ProStore will now update! Please click 'Install'."
             content.sound = .default
 
             let request = UNNotificationRequest(identifier: "ProStoreUpdate", content: content, trigger: nil)
@@ -134,3 +134,4 @@ struct UpdaterWebView: UIViewRepresentable {
         }
     }
 }
+
