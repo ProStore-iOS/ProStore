@@ -191,9 +191,9 @@ final class RepoViewModel: ObservableObject {
                 let sorted: [CachedApp]
                 switch sort {
                 case .nameAZ:
-                    sorted = filtered.sorted { $0.nameLower < $1.nameLower }
+                    sorted = filtered.sorted { a, b in let pa = (a.nameLower.first?.isLetter == true ? 0 : a.nameLower.first?.isNumber == true ? 1 : a.nameLower.first?.isPunctuation == true || a.nameLower.first?.isSymbol == true ? 2 : 3); let pb = (b.nameLower.first?.isLetter == true ? 0 : b.nameLower.first?.isNumber == true ? 1 : b.nameLower.first?.isPunctuation == true || b.nameLower.first?.isSymbol == true ? 2 : 3); pa != pb ? pa < pb : a.nameLower < b.nameLower }
                 case .nameZA:
-                    sorted = filtered.sorted { $0.nameLower > $1.nameLower }
+                    sorted = filtered.sorted { a, b in let pa = (a.nameLower.first?.isLetter == true ? 0 : a.nameLower.first?.isNumber == true ? 1 : a.nameLower.first?.isPunctuation == true || a.nameLower.first?.isSymbol == true ? 2 : 3); let pb = (b.nameLower.first?.isLetter == true ? 0 : b.nameLower.first?.isNumber == true ? 1 : b.nameLower.first?.isPunctuation == true || b.nameLower.first?.isSymbol == true ? 2 : 3); pa != pb ? pa < pb : a.nameLower > b.nameLower }
                 case .repoAZ:
                     // sort by repo then name
                     sorted = filtered.sorted {
@@ -647,16 +647,6 @@ public struct AppsView: View {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 Button(action: { vm.refresh() }) {
                     Image(systemName: "arrow.clockwise")
-                }
-                Button(action: {
-                    withAnimation(.spring()) { expandedRepos = Set(orderedRepoKeys) }
-                }) {
-                    Image(systemName: "rectangle.expand.vertical")
-                }
-                Button(action: {
-                    withAnimation(.spring()) { expandedRepos.removeAll() }
-                }) {
-                    Image(systemName: "rectangle.compress.vertical")
                 }
             }
         }
