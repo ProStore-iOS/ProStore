@@ -191,9 +191,9 @@ final class RepoViewModel: ObservableObject {
                 let sorted: [CachedApp]
                 switch sort {
                 case .nameAZ:
-                    sorted = filtered.sorted { a, b in let pa = (a.nameLower.first?.isLetter == true ? 0 : a.nameLower.first?.isNumber == true ? 1 : a.nameLower.first?.isPunctuation == true || a.nameLower.first?.isSymbol == true ? 2 : 3); let pb = (b.nameLower.first?.isLetter == true ? 0 : b.nameLower.first?.isNumber == true ? 1 : b.nameLower.first?.isPunctuation == true || b.nameLower.first?.isSymbol == true ? 2 : 3); pa != pb ? pa < pb : a.nameLower < b.nameLower }
+                    sorted = filtered.sorted { a, b in let pa = (a.nameLower.first?.isLetter == true ? 0 : a.nameLower.first?.isNumber == true ? 1 : (a.nameLower.first?.isPunctuation == true || a.nameLower.first?.isSymbol == true) ? 2 : 3); let pb = (b.nameLower.first?.isLetter == true ? 0 : b.nameLower.first?.isNumber == true ? 1 : (b.nameLower.first?.isPunctuation == true || b.nameLower.first?.isSymbol == true) ? 2 : 3); return pa != pb ? pa < pb : a.nameLower < b.nameLower }
                 case .nameZA:
-                    sorted = filtered.sorted { a, b in let pa = (a.nameLower.first?.isLetter == true ? 0 : a.nameLower.first?.isNumber == true ? 1 : a.nameLower.first?.isPunctuation == true || a.nameLower.first?.isSymbol == true ? 2 : 3); let pb = (b.nameLower.first?.isLetter == true ? 0 : b.nameLower.first?.isNumber == true ? 1 : b.nameLower.first?.isPunctuation == true || b.nameLower.first?.isSymbol == true ? 2 : 3); pa != pb ? pa < pb : a.nameLower > b.nameLower }
+                    sorted = filtered.sorted { a, b in let pa = (a.nameLower.first?.isLetter == true ? 0 : a.nameLower.first?.isNumber == true ? 1 : (a.nameLower.first?.isPunctuation == true || a.nameLower.first?.isSymbol == true) ? 2 : 3); let pb = (b.nameLower.first?.isLetter == true ? 0 : b.nameLower.first?.isNumber == true ? 1 : (b.nameLower.first?.isPunctuation == true || b.nameLower.first?.isSymbol == true) ? 2 : 3); return pa != pb ? pa < pb : a.nameLower > b.nameLower }
                 case .repoAZ:
                     // sort by repo then name
                     sorted = filtered.sorted {
@@ -757,4 +757,5 @@ private struct AppRowView: View {
         .padding(.vertical, 6)
         .contentShape(Rectangle())
     }
+
 }
