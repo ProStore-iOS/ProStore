@@ -1,7 +1,6 @@
 import SwiftUI
 import Combine
 import Foundation
-
 // MARK: - Models
 public struct AltSource: Decodable {
     let name: String?
@@ -9,13 +8,11 @@ public struct AltSource: Decodable {
     let iconURL: URL?
     let META: SourceMeta?
     let apps: [AppRaw]?
-
     struct SourceMeta: Decodable {
         let repoName: String?
         let repoIcon: String?
     }
 }
-
 // Raw app struct to support multiple JSON key variations from different feeds
 public struct AppRaw: Decodable {
     let name: String
@@ -26,13 +23,11 @@ public struct AppRaw: Decodable {
     let localizedDescription: String?
     let versions: [AppVersion]?
     let screenshotURLs: [URL]?
-
     // top-level app fields present in your example JSON
     let size: Int?
     let versionDate: String?
     let fullDate: String?
     let downloadURL: String?
-
     enum CodingKeys: String, CodingKey {
         case name
         case bundleIdentifier
@@ -50,13 +45,10 @@ public struct AppRaw: Decodable {
         case downloadURL
         case down
     }
-
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-
         // name
         self.name = try container.decode(String.self, forKey: .name)
-
         // bundleIdentifier: try bundleIdentifier then bundleID
         if let bid = try? container.decode(String.self, forKey: .bundleIdentifier) {
             self.bundleIdentifier = bid
@@ -66,10 +58,8 @@ public struct AppRaw: Decodable {
             // fallback (should not occur if JSON has an ID)
             self.bundleIdentifier = UUID().uuidString
         }
-
         self.developerName = try? container.decodeIfPresent(String.self, forKey: .developerName)
         self.subtitle = try? container.decodeIfPresent(String.self, forKey: .subtitle)
-
         // icon keys: iconURL or icon
         if let iconStr = try? container.decodeIfPresent(String.self, forKey: .iconURL) {
             self.iconURLString = iconStr
@@ -78,18 +68,14 @@ public struct AppRaw: Decodable {
         } else {
             self.iconURLString = nil
         }
-
         self.localizedDescription = try? container.decodeIfPresent(String.self, forKey: .localizedDescription)
-
         // versions and screenshotURLs are optional, decode normally
         self.versions = try? container.decodeIfPresent([AppVersion].self, forKey: .versions)
         self.screenshotURLs = try? container.decodeIfPresent([URL].self, forKey: .screenshotURLs)
-
         // other top-levels
         self.size = try? container.decodeIfPresent(Int.self, forKey: .size)
         self.versionDate = try? container.decodeIfPresent(String.self, forKey: .versionDate)
         self.fullDate = try? container.decodeIfPresent(String.self, forKey: .fullDate)
-
         // downloadURL keys: downloadURL or down
         if let dl = try? container.decodeIfPresent(String.self, forKey: .downloadURL) {
             self.downloadURL = dl
@@ -100,7 +86,6 @@ public struct AppRaw: Decodable {
         }
     }
 }
-
 public struct AppVersion: Decodable {
     let version: String?
     let date: String?
@@ -109,11 +94,9 @@ public struct AppVersion: Decodable {
     let minOSVersion: String?
     let localizedDescription: String?
 }
-
 // Final AltApp used by the UI (includes repositoryName)
 public struct AltApp: Identifiable, Equatable {
     public var id: String { bundleIdentifier }
-
     public let name: String
     public let bundleIdentifier: String
     public let developerName: String?
@@ -141,13 +124,10 @@ public struct AltApp: Identifiable, Equatable {
                lhs.repositoryName == rhs.repositoryName
     }
 }
-
-
 // MARK: - CachedApp
 public struct CachedApp: Identifiable {
     public var id: String { app.id }
     public let app: AltApp
-
     // precomputed fields for fast filtering/sorting
     public let nameLower: String
     public let bundleLower: String
@@ -156,7 +136,6 @@ public struct CachedApp: Identifiable {
     public let repoName: String
     public let parsedDate: Date?
     public let sizeValue: Int?
-
     public init(app: AltApp) {
         self.app = app
         self.nameLower = app.name.lowercased()
@@ -168,39 +147,31 @@ public struct CachedApp: Identifiable {
         self.sizeValue = app.size
     }
 }
-
 // MARK: - ViewModel (updated)
 @MainActor
 final class RepoViewModel: ObservableObject {
     // raw apps
     @Published private(set) var apps: [AltApp] = []
-
     // cached wrapper for each app (pre-parsed)
     @Published private(set) var cachedApps: [CachedApp] = []
-
     // the final list that UI will use (already filtered + sorted)
     @Published private(set) var displayedCachedApps: [CachedApp] = []
-
     // loading, error
     @Published var isLoading: Bool = false
     @Published var errorMessage: String? = nil
-
     // user-controllable search & sort
     @Published var searchQuery: String = ""
     @Published var selectedSort: SortOption = .nameAZ
-
-    private let sourceURLs: [URL]   // <-- multiple sources
+    private let sourceURLs: [URL] // <-- multiple sources
     private var cancellables = Set<AnyCancellable>()
-
     init(sourceURLs: [URL]) {
         self.sourceURLs = sourceURLs
-
         // Combine pipeline: debounce search/sort, react to cachedApps changes
         Publishers.CombineLatest3($searchQuery.removeDuplicates(),
                                   $selectedSort.removeDuplicates(by: { $0.rawValue == $1.rawValue }),
                                   $cachedApps)
             .debounce(for: .milliseconds(250), scheduler: RunLoop.main) // debounce both search & sort changes
-            .receive(on: DispatchQueue.global(qos: .userInitiated))     // process filtering/sorting off main
+            .receive(on: DispatchQueue.global(qos: .userInitiated)) // process filtering/sorting off main
             .map { (query, sort, cached) -> [CachedApp] in
                 let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 let filtered: [CachedApp]
@@ -216,7 +187,6 @@ final class RepoViewModel: ObservableObject {
                         return false
                     }
                 }
-
                 // Sorting using cached fields (fast)
                 let sorted: [CachedApp]
                 switch sort {
@@ -264,29 +234,22 @@ final class RepoViewModel: ObservableObject {
                 self?.displayedCachedApps = result
             }
             .store(in: &cancellables)
-
         Task { await loadAllSources() }
     }
-
     func loadAllSources() async {
         await MainActor.run { isLoading = true; errorMessage = nil }
         defer { Task { await MainActor.run { self.isLoading = false } } }
-
         var combinedApps: [AltApp] = []
         var errors: [String] = []
-
         for url in sourceURLs {
             do {
                 var request = URLRequest(url: url)
                 request.setValue("AppTestersListView/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
-
                 let (data, response) = try await URLSession.shared.data(for: request)
                 if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
                     throw NSError(domain: "RepoFetcher", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode)"])
                 }
-
                 let decoder = JSONDecoder()
-
                 if let source = try? decoder.decode(AltSource.self, from: data), let rawApps = source.apps {
                     let repoName = source.META?.repoName ?? source.name
                     let mapped = rawApps.map { raw -> AltApp in
@@ -309,7 +272,6 @@ final class RepoViewModel: ObservableObject {
                     combinedApps.append(contentsOf: mapped)
                     continue
                 }
-
                 if let rawArray = try? decoder.decode([AppRaw].self, from: data) {
                     let mapped = rawArray.map { raw -> AltApp in
                         AltApp(
@@ -331,7 +293,6 @@ final class RepoViewModel: ObservableObject {
                     combinedApps.append(contentsOf: mapped)
                     continue
                 }
-
                 if let jsonObject = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let appsFragment = jsonObject["apps"] {
                     let fragmentData = try JSONSerialization.data(withJSONObject: appsFragment)
@@ -356,14 +317,11 @@ final class RepoViewModel: ObservableObject {
                     combinedApps.append(contentsOf: mapped)
                     continue
                 }
-
                 throw NSError(domain: "RepoFetcher", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unexpected JSON format."])
-
             } catch {
                 errors.append("Failed \(url): \(error.localizedDescription)")
             }
         }
-
         // dedupe by bundleIdentifier (keep first occurrence)
         var seen: Set<String> = []
         let deduped = combinedApps.filter { app in
@@ -371,11 +329,9 @@ final class RepoViewModel: ObservableObject {
             seen.insert(app.bundleIdentifier)
             return true
         }
-
         await MainActor.run {
             self.apps = deduped
         }
-
         // compute cachedApps off-main
         Task.detached { [deduped] in
             let cached = deduped.map { CachedApp(app: $0) }
@@ -383,14 +339,12 @@ final class RepoViewModel: ObservableObject {
                 self.cachedApps = cached
             }
         }
-
         if !errors.isEmpty {
             await MainActor.run {
                 self.errorMessage = errors.joined(separator: "\n")
             }
         }
     }
-
     func refresh() {
         Task { await loadAllSources() }
     }
@@ -403,10 +357,8 @@ struct RetryAsyncImage<Content: View, Placeholder: View, Failure: View>: View {
     let content: (Image) -> Content
     let placeholder: () -> Placeholder
     let failure: () -> Failure
-
     @State private var currentAttempt: Int = 0
     @State private var retryTrigger: UUID = UUID()
-
     private var modifiedURL: URL? {
         guard let url = url else { return nil }
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
@@ -416,7 +368,6 @@ struct RetryAsyncImage<Content: View, Placeholder: View, Failure: View>: View {
         components?.queryItems = query
         return components?.url
     }
-
     init(
         url: URL?,
         size: CGSize? = nil,
@@ -432,7 +383,6 @@ struct RetryAsyncImage<Content: View, Placeholder: View, Failure: View>: View {
         self.placeholder = placeholder
         self.failure = failure
     }
-
     var body: some View {
         let frameView = Group {
             if let modifiedURL = modifiedURL {
@@ -463,7 +413,6 @@ struct RetryAsyncImage<Content: View, Placeholder: View, Failure: View>: View {
                 failure()
             }
         }
-
         if let size = size {
             frameView
                 .frame(width: size.width, height: size.height)
@@ -473,7 +422,6 @@ struct RetryAsyncImage<Content: View, Placeholder: View, Failure: View>: View {
         }
     }
 }
-
 // Helper for parsing dates
 fileprivate func appDate(for app: AltApp) -> Date? {
     // Prefer fullDate (format like "20251126100919"), else try versionDate like "2025-11-26"
@@ -492,7 +440,6 @@ fileprivate func appDate(for app: AltApp) -> Date? {
         }
         if let d = formatter.date(from: full) { return d }
     }
-
     if let vd = app.versionDate {
         let formatter = ISO8601DateFormatter()
         // attempt strict "yyyy-MM-dd"
@@ -505,10 +452,8 @@ fileprivate func appDate(for app: AltApp) -> Date? {
         df.dateFormat = "yyyy-MM-dd"
         if let d = df.date(from: vd) { return d }
     }
-
     return nil
 }
-
 // MARK: - Sorting
 enum SortOption: String, CaseIterable, Identifiable {
     case nameAZ = "Name: A - Z"
@@ -518,30 +463,23 @@ enum SortOption: String, CaseIterable, Identifiable {
     case dateOldNew = "Date: Old - New"
     case sizeLowHigh = "Size: Low - High"
     case sizeHighLow = "Size: High - Low"
-
     var id: String { self.rawValue }
 }
-
 // MARK: - AppsView (updated to use cached + vm search/sort)
 public struct AppsView: View {
     @StateObject private var vm: RepoViewModel
     @FocusState private var searchFieldFocused: Bool
     @State private var selectedApp: AltApp? = nil
-
     /// Which repositories are expanded (by repository key string).
     @State private var expandedRepos: Set<String> = []
-
     public init(repoURLs: [URL] = [URL(string: "https://repository.apptesters.org/")!]) {
         _vm = StateObject(wrappedValue: RepoViewModel(sourceURLs: repoURLs))
     }
-
     // MARK: - Helpers using cached data (fast)
     private var cachedList: [CachedApp] { vm.displayedCachedApps }
-
     private var groupedCached: [String: [CachedApp]] {
         Dictionary(grouping: cachedList, by: { $0.repoName })
     }
-
     private var orderedRepoKeys: [String] {
         let keys = Array(groupedCached.keys)
         if vm.selectedSort == .repoAZ {
@@ -558,7 +496,6 @@ public struct AppsView: View {
             return order
         }
     }
-
     // MARK: - View pieces
     @ViewBuilder private var searchAndSortBar: some View {
         if !(vm.isLoading && vm.apps.isEmpty) {
@@ -571,7 +508,6 @@ public struct AppsView: View {
                         .disableAutocorrection(true)
                         .focused($searchFieldFocused)
                         .submitLabel(.search)
-
                     if !vm.searchQuery.isEmpty {
                         Button(action: { vm.searchQuery = "" }) {
                             Image(systemName: "xmark.circle.fill")
@@ -584,7 +520,6 @@ public struct AppsView: View {
                 .background(.regularMaterial)
                 .cornerRadius(10)
                 .frame(maxWidth: .infinity)
-
                 Picker(selection: $vm.selectedSort, label: Label("Sort", systemImage: "arrow.up.arrow.down")) {
                     ForEach(SortOption.allCases) { option in
                         Text(option.rawValue).tag(option)
@@ -601,7 +536,6 @@ public struct AppsView: View {
             .padding(.top, 8)
         }
     }
-
     @ViewBuilder private var loadingView: some View {
         VStack(spacing: 12) {
             ProgressView()
@@ -611,7 +545,6 @@ public struct AppsView: View {
         }
         .padding()
     }
-
     @ViewBuilder private func errorView(_ error: String) -> some View {
         VStack(spacing: 12) {
             Text("Error")
@@ -625,7 +558,6 @@ public struct AppsView: View {
         }
         .padding()
     }
-
     @ViewBuilder private func repoHeader(_ repoKey: String) -> some View {
         HStack(spacing: 8) {
             Button(action: {
@@ -658,7 +590,6 @@ public struct AppsView: View {
         .padding(.vertical, 6)
         .contentShape(Rectangle())
     }
-
     @ViewBuilder private func repoSection(_ repoKey: String) -> some View {
         Section {
             if expandedRepos.contains(repoKey) {
@@ -674,7 +605,6 @@ public struct AppsView: View {
             repoHeader(repoKey)
         }
     }
-
     @ViewBuilder private var listView: some View {
         if vm.selectedSort == .repoAZ {
             List {
@@ -695,12 +625,10 @@ public struct AppsView: View {
             .refreshable { vm.refresh() }
         }
     }
-
     // MARK: - Body
     public var body: some View {
         VStack(spacing: 0) {
             searchAndSortBar
-
             Group {
                 if vm.isLoading && vm.apps.isEmpty {
                     loadingView
@@ -753,12 +681,10 @@ public struct AppsView: View {
         }
     }
 }
-
 // MARK: - AppRowView
 private struct AppRowView: View {
     let app: AltApp
     private let iconSize = CGSize(width: 48, height: 48)
-
     var body: some View {
         HStack(spacing: 12) {
             // Icon column: always reserves space so text doesn't shift
@@ -766,7 +692,6 @@ private struct AppRowView: View {
                 RoundedRectangle(cornerRadius: 10)
                     .fill(Color.gray.opacity(0.12))
                     .frame(width: iconSize.width, height: iconSize.height)
-
                 if let iconURL = app.iconURL {
                     if let cached = ImageCache.shared.get(for: iconURL) {
                         cached
@@ -780,15 +705,16 @@ private struct AppRowView: View {
                             size: iconSize,
                             maxAttempts: 3,
                             content: { image in
-                                if let uiImage = image.asUIImage {
-                                    ImageCache.shared.set(uiImage, for: iconURL)
-                                }
-
                                 image
                                     .resizable()
                                     .scaledToFill()
                                     .frame(width: iconSize.width, height: iconSize.height)
                                     .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    .onAppear {
+                                        if let uiImage = image.asUIImage {
+                                            ImageCache.shared.set(uiImage, for: iconURL)
+                                        }
+                                    }
                             },
                             placeholder: {
                                 ProgressView()
@@ -802,7 +728,7 @@ private struct AppRowView: View {
                                     .foregroundColor(.secondary)
                             }
                         )
-                }
+                    }
                 } else {
                     Image(systemName: "app")
                         .resizable()
@@ -812,7 +738,6 @@ private struct AppRowView: View {
                 }
             }
             .frame(width: iconSize.width, height: iconSize.height) // crucial: fixed width
-
             VStack(alignment: .leading, spacing: 2) {
                 Text(app.name)
                     .font(.headline)
@@ -835,9 +760,7 @@ private struct AppRowView: View {
                         .lineLimit(1)
                 }
             }
-
             Spacer()
-
             Image(systemName: "chevron.right")
                 .foregroundColor(.secondary)
         }
