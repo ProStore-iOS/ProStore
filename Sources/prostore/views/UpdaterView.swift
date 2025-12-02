@@ -18,7 +18,7 @@ struct UpdaterWebView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
-        config.preferences.javaScriptEnabled = true
+        config.defaultWebpagePreferences.allowsContentJavaScript = true
         config.allowsInlineMediaPlayback = true
         
         let webView = WKWebView(frame: .zero, configuration: config)
@@ -134,4 +134,5 @@ struct UpdaterWebView: UIViewRepresentable {
         }
     }
 }
+
 
