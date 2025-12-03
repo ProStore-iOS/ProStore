@@ -258,7 +258,7 @@ struct CertificateView: View {
         loadExpiries()
         for cert in customCertificates {
             Task {
-                let status = await CertRevokeChecker.checkRevocation(folderName: cert.folderName)
+                let status = (try? await { let dir = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(cert.folderName); let p12 = try Data(contentsOf: dir.appendingPathComponent("certificate.p12")); let mp = try Data(contentsOf: dir.appendingPathComponent("profile.mobileprovision")); let pw = (try? String(contentsOf: dir.appendingPathComponent("password.txt"), encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""; return try await CertChecker.checkCert(mobileProvision: mp, mobileProvisionFilename: "profile.mobileprovision", p12: p12, p12Filename: "certificate.p12", password: pw) })().flatMap { ($0["certificate"] as? [String: String])?["status"] ?? ($0["certificate_matching_status"] as? String) } ?? "Unknown"
                 await MainActor.run {
                     certStatuses[cert.folderName] = status
                 }
