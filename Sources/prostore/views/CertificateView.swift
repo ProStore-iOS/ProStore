@@ -257,10 +257,24 @@ struct CertificateView: View {
         ensureSelection()
         loadExpiries()
         for cert in customCertificates {
+            let certCopy = cert
             Task {
-                let status = (try? await { let dir = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(cert.folderName); let p12 = try Data(contentsOf: dir.appendingPathComponent("certificate.p12")); let mp = try Data(contentsOf: dir.appendingPathComponent("profile.mobileprovision")); let pw = (try? String(contentsOf: dir.appendingPathComponent("password.txt"), encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""; return try await CertChecker.checkCert(mobileProvision: mp, mobileProvisionFilename: "profile.mobileprovision", p12: p12, p12Filename: "certificate.p12", password: pw) })().flatMap { ($0["certificate"] as? [String: String])?["status"] ?? ($0["certificate_matching_status"] as? String) } ?? "Unknown"
-                await MainActor.run {
-                    certStatuses[cert.folderName] = status
+                do {
+                    let status = (try? await { 
+                        let dir = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(certCopy.folderName)
+                        let p12 = try Data(contentsOf: dir.appendingPathComponent("certificate.p12"))
+                        let mp  = try Data(contentsOf: dir.appendingPathComponent("profile.mobileprovision"))
+                        let pw  = (try? String(contentsOf: dir.appendingPathComponent("password.txt"), encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                        return try await CertChecker.checkCert(mobileProvision: mp, mobileProvisionFilename: "profile.mobileprovision", p12: p12, p12Filename: "certificate.p12", password: pw)
+                    })().flatMap { ($0["certificate"] as? [String: String])?["status"] ?? ($0["certificate_matching_status"] as? String) } ?? "Unknown"
+
+                    await MainActor.run {
+                    certStatuses[certCopy.folderName] = status
+                    }
+                } catch {
+                    await MainActor.run {
+                        certStatuses[certCopy.folderName] = "Unknown"
+                    }
                 }
             }
         }
