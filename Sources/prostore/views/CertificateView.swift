@@ -256,28 +256,7 @@ struct CertificateView: View {
         selectedCert = UserDefaults.standard.string(forKey: "selectedCertificateFolder")
         ensureSelection()
         loadExpiries()
-        for cert in customCertificates {
-            let certCopy = cert
-            Task {
-                do {
-                    let status = (try? await { 
-                        let dir = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(certCopy.folderName)
-                        let p12 = try Data(contentsOf: dir.appendingPathComponent("certificate.p12"))
-                        let mp  = try Data(contentsOf: dir.appendingPathComponent("profile.mobileprovision"))
-                        let pw  = (try? String(contentsOf: dir.appendingPathComponent("password.txt"), encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                        return try await CertChecker.checkCert(mobileProvision: mp, mobileProvisionFilename: "profile.mobileprovision", p12: p12, p12Filename: "certificate.p12", password: pw)
-                    })().flatMap { ($0["certificate"] as? [String: String])?["status"] ?? ($0["certificate_matching_status"] as? String) } ?? "Unknown"
-
-                    await MainActor.run {
-                    certStatuses[certCopy.folderName] = status
-                    }
-                } catch {
-                    await MainActor.run {
-                        certStatuses[certCopy.folderName] = "Unknown"
-                    }
-                }
-            }
-        }
+        for cert in customCertificates { let certCopy = cert; Task<Void, Never> { do { let dir = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(certCopy.folderName); let p12 = try Data(contentsOf: dir.appendingPathComponent("certificate.p12")); let mp = try Data(contentsOf: dir.appendingPathComponent("profile.mobileprovision")); let pw = (try? String(contentsOf: dir.appendingPathComponent("password.txt"), encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""; let parsed = try await CertChecker.checkCert(mobileProvision: mp, mobileProvisionFilename: "profile.mobileprovision", p12: p12, p12Filename: "certificate.p12", password: pw); let status = (parsed["certificate"] as? [String: String])?["status"] ?? (parsed["certificate_matching_status"] as? String) ?? "Unknown"; await MainActor.run { certStatuses[certCopy.folderName] = status } } catch { await MainActor.run { certStatuses[certCopy.folderName] = "Unknown" } } } }
     }
     private func loadExpiries() {
         for cert in customCertificates {
