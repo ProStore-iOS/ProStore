@@ -251,13 +251,85 @@ struct CertificateView: View {
         .padding(.top, 12)
         .padding(.horizontal, 12)
     }
-    private func reloadCertificatesAndEnsureSelection() {
-        customCertificates = CertificateFileManager.shared.loadCertificates()
-        selectedCert = UserDefaults.standard.string(forKey: "selectedCertificateFolder")
-        ensureSelection()
-        loadExpiries()
-        for cert in customCertificates { let certCopy = cert; Task<Void, Never> { do { let dir = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(certCopy.folderName); let p12 = try Data(contentsOf: dir.appendingPathComponent("certificate.p12")); let mp = try Data(contentsOf: dir.appendingPathComponent("profile.mobileprovision")); let pw = (try? String(contentsOf: dir.appendingPathComponent("password.txt"), encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""; let parsed = try await CertChecker.checkCert(mobileProvision: mp, mobileProvisionFilename: "profile.mobileprovision", p12: p12, p12Filename: "certificate.p12", password: pw); let status = (parsed["certificate"] as? [String: String])?["status"] ?? (parsed["certificate_matching_status"] as? String) ?? "Unknown"; await MainActor.run { certStatuses[certCopy.folderName] = status } } catch { await MainActor.run { certStatuses[certCopy.folderName] = "Unknown" } } } }
+private func reloadCertificatesAndEnsureSelection() {
+    CertChecker.log("=== reloadCertificatesAndEnsureSelection() called ===")
+    
+    customCertificates = CertificateFileManager.shared.loadCertificates()
+    CertChecker.log("Loaded \(customCertificates.count) certificates")
+    
+    selectedCert = UserDefaults.standard.string(forKey: "selectedCertificateFolder")
+    ensureSelection()
+    loadExpiries()
+    
+    for cert in customCertificates { 
+        let certCopy = cert
+        Task<Void, Never> { 
+            do { 
+                CertChecker.log("\n--- Checking certificate: \(certCopy.displayName) ---")
+                
+                let dir = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(certCopy.folderName)
+                CertChecker.log("Certificate directory: \(dir.path)")
+                
+                // Check if files exist
+                let p12URL = dir.appendingPathComponent("certificate.p12")
+                let mpURL = dir.appendingPathComponent("profile.mobileprovision")
+                let pwURL = dir.appendingPathComponent("password.txt")
+                
+                let fileManager = FileManager.default
+                let p12Exists = fileManager.fileExists(atPath: p12URL.path)
+                let mpExists = fileManager.fileExists(atPath: mpURL.path)
+                let pwExists = fileManager.fileExists(atPath: pwURL.path)
+                
+                CertChecker.log("File existence check:")
+                CertChecker.log("  certificate.p12: \(p12Exists ? "✓" : "✗")")
+                CertChecker.log("  profile.mobileprovision: \(mpExists ? "✓" : "✗")")
+                CertChecker.log("  password.txt: \(pwExists ? "✓" : "✗")")
+                
+                if !p12Exists || !mpExists || !pwExists {
+                    CertChecker.log("ERROR: Missing required files")
+                    await MainActor.run { 
+                        certStatuses[certCopy.folderName] = "Missing Files" 
+                    }
+                    return
+                }
+                
+                let p12 = try Data(contentsOf: p12URL)
+                let mp = try Data(contentsOf: mpURL)
+                let pw = (try? String(contentsOf: pwURL, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                
+                CertChecker.log("File sizes:")
+                CertChecker.log("  P12: \(p12.count) bytes")
+                CertChecker.log("  MobileProvision: \(mp.count) bytes")
+                CertChecker.log("  Password length: \(pw.count) characters")
+                
+                let parsed = try await CertChecker.checkCert(
+                    mobileProvision: mp, 
+                    mobileProvisionFilename: "profile.mobileprovision", 
+                    p12: p12, 
+                    p12Filename: "certificate.p12", 
+                    password: pw
+                )
+                
+                let status = (parsed["certificate"] as? [String: String])?["status"] ?? 
+                            (parsed["certificate_matching_status"] as? String) ?? 
+                            "Unknown"
+                
+                CertChecker.log("Certificate \(certCopy.displayName) status: \(status)")
+                
+                await MainActor.run { 
+                    certStatuses[certCopy.folderName] = status 
+                }
+            } catch { 
+                CertChecker.log("ERROR checking certificate \(certCopy.displayName): \(error.localizedDescription)")
+                await MainActor.run { 
+                    certStatuses[certCopy.folderName] = "Check Error" 
+                } 
+            } 
+        } 
     }
+    
+    CertChecker.log("=== Finished reloadCertificatesAndEnsureSelection() ===\n")
+}
     private func loadExpiries() {
         for cert in customCertificates {
             let folderName = cert.folderName
