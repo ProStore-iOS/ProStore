@@ -5,7 +5,7 @@ class CertChecker {
     static let logFileURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("checkCert_logs.txt")
     
     // MARK: - Logging Utility
-    private static func log(_ message: String, includeTimestamp: Bool = true) {
+    static func log(_ message: String, includeTimestamp: Bool = true) {
         let timestamp = includeTimestamp ? "\(DateFormatter.localizedString(from: Date(), dateStyle: .medium, timeStyle: .medium)) - " : ""
         let logMessage = timestamp + message + "\n"
         
