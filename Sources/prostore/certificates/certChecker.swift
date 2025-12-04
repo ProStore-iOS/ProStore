@@ -181,7 +181,6 @@ class CertChecker {
         }
     }
     
-    // MARK: - HTML Parsing
 // MARK: - HTML Parsing
 static func parseHTML(html: String) -> [String: Any] {
     log("=== Starting parseHTML() ===")
@@ -208,105 +207,156 @@ static func parseHTML(html: String) -> [String: Any] {
             var divContent = String(html[range])
             log("Alert div content length: \(divContent.count) characters")
             
-            // Clean up the content
+            // Clean up the content but preserve line breaks
+            // First replace <br/> with newlines
             divContent = divContent.replacingOccurrences(of: "<br/>", with: "\n", options: .caseInsensitive)
             divContent = divContent.replacingOccurrences(of: "<br />", with: "\n", options: .caseInsensitive)
             divContent = divContent.replacingOccurrences(of: "&emsp;", with: "    ", options: .caseInsensitive)
             
-            // Remove HTML tags
+            // Now remove HTML tags
             let tagRegex = try? NSRegularExpression(pattern: "<[^>]+>", options: [])
             divContent = tagRegex?.stringByReplacingMatches(in: divContent, range: NSRange(0..<divContent.utf16.count), withTemplate: "") ?? divContent
             
             // Remove emojis and special characters but keep text
-            let emojiRegex = try? NSRegularExpression(pattern: "[\\🟢🔴]", options: [])
-            divContent = emojiRegex?.stringByReplacingMatches(in: divContent, range: NSRange(0..<divContent.utf16.count), withTemplate: "") ?? divContent
+            divContent = divContent.replacingOccurrences(of: "🟢", with: "")
+            divContent = divContent.replacingOccurrences(of: "🔴", with: "")
             
-            // Clean up multiple spaces and newlines
-            divContent = divContent.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            divContent = divContent.replacingOccurrences(of: "\\n\\s*\\n", with: "\n", options: .regularExpression)
+            // Split into lines and clean each line
+            let rawLines = divContent.components(separatedBy: .newlines)
+            var lines: [String] = []
             
-            log("Cleaned alert div content: \(divContent)")
-            
-            var lines = divContent.components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
+            for line in rawLines {
+                let cleanedLine = line.trimmingCharacters(in: .whitespaces)
+                if !cleanedLine.isEmpty {
+                    lines.append(cleanedLine)
+                }
+            }
             
             log("Found \(lines.count) lines after cleaning")
+            log("Lines: \(lines)")
             
-            // SIMPLIFIED PARSING APPROACH
-            // Instead of complex line-by-line parsing, extract key information directly
+            // Create a dictionary to store all parsed data
+            var parsedDict: [String: String] = [:]
             
-            // Extract certificate status
-            if let certStatusRange = divContent.range(of: "Certificate Status:") {
-                let remaining = divContent[certStatusRange.upperBound...]
-                if let endOfLine = remaining.firstIndex(of: "\n") {
-                    let status = String(remaining[..<endOfLine]).trimmingCharacters(in: .whitespaces)
-                    var cert = data["certificate"] as! [String: String]
-                    cert["status"] = status
-                    data["certificate"] = cert
-                    log("Certificate Status: \(status)")
+            // Parse each line
+            for line in lines {
+                // Handle different colon types
+                let separators = [": ", "："]
+                for separator in separators {
+                    if line.contains(separator) {
+                        let parts = line.components(separatedBy: separator)
+                        if parts.count >= 2 {
+                            let key = parts[0].trimmingCharacters(in: .whitespaces)
+                            let value = parts[1...].joined(separator: separator).trimmingCharacters(in: .whitespaces)
+                            parsedDict[key] = value
+                            break
+                        }
+                    }
                 }
             }
+            
+            log("Parsed dictionary: \(parsedDict)")
+            
+            // Extract certificate info
+            var cert = data["certificate"] as! [String: String]
+            if let certName = parsedDict["CertName"] {
+                cert["name"] = certName
+            }
+            if let effDate = parsedDict["Effective Date"] {
+                cert["effective"] = effDate
+            }
+            if let expDate = parsedDict["Expiration Date"] {
+                cert["expiration"] = expDate
+            }
+            if let issuer = parsedDict["Issuer"] {
+                cert["issuer"] = issuer
+            }
+            if let country = parsedDict["Country"] {
+                cert["country"] = country
+            }
+            if let org = parsedDict["Organization"] {
+                cert["organization"] = org
+            }
+            if let numHex = parsedDict["Certificate Number (Hex)"] {
+                cert["number_hex"] = numHex
+            }
+            if let numDec = parsedDict["Certificate Number (Decimal)"] {
+                cert["number_decimal"] = numDec
+            }
+            if let certStatus = parsedDict["Certificate Status"] {
+                cert["status"] = certStatus
+            }
+            data["certificate"] = cert
+            
+            // Extract mobileprovision info
+            var mp = data["mobileprovision"] as! [String: String]
+            if let mpName = parsedDict["MP Name"] {
+                mp["name"] = mpName
+            }
+            if let appId = parsedDict["App ID"] {
+                mp["app_id"] = appId
+            }
+            if let identifier = parsedDict["Identifier"] {
+                mp["identifier"] = identifier
+            }
+            if let platform = parsedDict["Platform"] {
+                mp["platform"] = platform
+            }
+            // Look for mobileprovision dates (they might be duplicates from certificate section)
+            for (key, value) in parsedDict {
+                let lk = key.lowercased()
+                if lk.contains("effective date") && !lk.contains("cert") {
+                    mp["effective"] = value
+                }
+                if lk.contains("expiration date") && !lk.contains("cert") {
+                    mp["expiration"] = value
+                }
+            }
+            data["mobileprovision"] = mp
+            
+            // Extract binding certificate info
+            // Look for "Certificate 1" and related info
+            var bc1 = data["binding_certificate_1"] as! [String: String]
+            for (key, value) in parsedDict {
+                if key.contains("Certificate 1") || key.contains("Certificate Status") {
+                    bc1["status"] = value
+                } else if key.contains("Certificate Number (Hex)") && (bc1["number_hex"] == nil) {
+                    bc1["number_hex"] = value
+                } else if key.contains("Certificate Number (Decimal)") && (bc1["number_decimal"] == nil) {
+                    bc1["number_decimal"] = value
+                }
+            }
+            data["binding_certificate_1"] = bc1
             
             // Extract certificate matching status
-            if let matchStatusRange = divContent.range(of: "Certificate Matching Status:") {
-                let remaining = divContent[matchStatusRange.upperBound...]
-                if let endOfLine = remaining.firstIndex(of: "\n") {
-                    let status = String(remaining[..<endOfLine]).trimmingCharacters(in: .whitespaces)
-                    data["certificate_matching_status"] = status
-                    log("Certificate Matching Status: \(status)")
-                }
+            if let matchStatus = parsedDict["Certificate Matching Status"] {
+                data["certificate_matching_status"] = matchStatus
             }
             
-            // Extract effective and expiration dates
-            if let effDateRange = divContent.range(of: "Effective Date:") {
-                let remaining = divContent[effDateRange.upperBound...]
-                if let endOfLine = remaining.firstIndex(of: "\n") {
-                    let date = String(remaining[..<endOfLine]).trimmingCharacters(in: .whitespaces)
-                    var cert = data["certificate"] as! [String: String]
-                    cert["effective"] = date
-                    data["certificate"] = cert
+            // Extract permissions
+            var perms = data["permissions"] as! [String: String]
+            let permKeys = [
+                "Apple Push Notification Service",
+                "HealthKit", 
+                "VPN",
+                "Communication Notifications",
+                "Time-sensitive Notifications"
+            ]
+            
+            for key in permKeys {
+                if let value = parsedDict[key] {
+                    perms[key] = value
                 }
             }
+            data["permissions"] = perms
             
-            if let expDateRange = divContent.range(of: "Expiration Date:") {
-                let remaining = divContent[expDateRange.upperBound...]
-                if let endOfLine = remaining.firstIndex(of: "\n") {
-                    let date = String(remaining[..<endOfLine]).trimmingCharacters(in: .whitespaces)
-                    var cert = data["certificate"] as! [String: String]
-                    cert["expiration"] = date
-                    data["certificate"] = cert
-                }
-            }
-            
-            // Extract certificate name
-            if let nameRange = divContent.range(of: "CertName:") {
-                let remaining = divContent[nameRange.upperBound...]
-                if let endOfLine = remaining.firstIndex(of: "\n") {
-                    let name = String(remaining[..<endOfLine]).trimmingCharacters(in: .whitespaces)
-                    var cert = data["certificate"] as! [String: String]
-                    cert["name"] = name
-                    data["certificate"] = cert
-                }
-            }
-            
-            // Extract MP name
-            if let mpNameRange = divContent.range(of: "MP Name:") {
-                let remaining = divContent[mpNameRange.upperBound...]
-                if let endOfLine = remaining.firstIndex(of: "\n") {
-                    let name = String(remaining[..<endOfLine]).trimmingCharacters(in: .whitespaces)
-                    var mp = data["mobileprovision"] as! [String: String]
-                    mp["name"] = name
-                    data["mobileprovision"] = mp
-                }
-            }
-            
-            // Check for key phrases to determine overall status
+            // Determine overall status
             let overallStatus: String
-            if divContent.contains("🟢Good") || divContent.contains("🟢Match") {
+            if let certStatus = cert["status"], certStatus.lowercased().contains("good") {
                 overallStatus = "Valid"
-            } else if divContent.contains("🔴") {
-                overallStatus = "Invalid"
+            } else if let matchStatus = data["certificate_matching_status"] as? String,
+                     matchStatus.lowercased().contains("match") {
+                overallStatus = "Valid"
             } else {
                 overallStatus = "Unknown"
             }
@@ -328,21 +378,22 @@ static func parseHTML(html: String) -> [String: Any] {
     log("Attempting fallback parsing...")
     
     // Check for key status indicators in the raw HTML
-    if html.contains("🟢Good") {
-        data["overall_status"] = "Valid"
-        log("Fallback: Found 🟢Good indicator")
-    } else if html.contains("🔴Mismatch") || html.contains("🔴No Permission") {
-        data["overall_status"] = "Invalid"
+    var overallStatus = "Unknown"
+    if html.contains("🟢Good") && html.contains("🟢Match") {
+        overallStatus = "Valid"
+        log("Fallback: Found 🟢Good and 🟢Match indicators")
+    } else if html.contains("🔴") {
+        overallStatus = "Invalid"
         log("Fallback: Found 🔴 indicator")
-    } else {
-        data["overall_status"] = "Unknown"
-        log("Fallback: No clear status indicators found")
     }
+    
+    data["overall_status"] = overallStatus
+    log("Fallback Overall Status: \(overallStatus)")
     
     log("=== parseHTML() Completed with Fallback ===")
     
     return ["error": "Could not fully parse certificate info", 
-            "overall_status": data["overall_status"] as? String ?? "Unknown",
+            "overall_status": overallStatus,
             "raw_html_preview": String(html.prefix(1000))]
 }
     
