@@ -182,255 +182,169 @@ class CertChecker {
     }
     
     // MARK: - HTML Parsing
-    static func parseHTML(html: String) -> [String: Any] {
-        log("=== Starting parseHTML() ===")
-        log("Input HTML length: \(html.count) characters")
+// MARK: - HTML Parsing
+static func parseHTML(html: String) -> [String: Any] {
+    log("=== Starting parseHTML() ===")
+    log("Input HTML length: \(html.count) characters")
+    
+    var data: [String: Any] = [
+        "certificate": [String: String](),
+        "mobileprovision": [String: String](),
+        "binding_certificate_1": [String: String](),
+        "permissions": [String: String]()
+    ]
+    
+    // First, try to find alert div with more flexible pattern
+    let divPattern = "(?i)<div[^>]*class=\"[^\"]*alert[^\"]*\"[^>]*>(.*?)</div>"
+    log("Searching for alert div with pattern: \(divPattern)")
+    
+    let divRegex = try? NSRegularExpression(pattern: divPattern, options: .dotMatchesLineSeparators)
+    
+    if let divRegex = divRegex {
+        let matches = divRegex.matches(in: html, range: NSRange(location: 0, length: html.utf16.count))
+        log("Found \(matches.count) alert div matches")
         
-        var data: [String: Any] = [
-            "certificate": [String: String](),
-            "mobileprovision": [String: String](),
-            "binding_certificate_1": [String: String](),
-            "permissions": [String: String]()
-        ]
-        
-        // First, try to find alert div
-        let divPattern = "(?i)<div\\s+class=\"[^\"]*alert[^\"]*\"[^>]*>(.*?)</div>"
-        log("Searching for alert div with pattern: \(divPattern)")
-        
-        let divRegex = try? NSRegularExpression(pattern: divPattern, options: .dotMatchesLineSeparators)
-        
-        if let divRegex = divRegex {
-            let matches = divRegex.matches(in: html, range: NSRange(location: 0, length: html.utf16.count))
-            log("Found \(matches.count) alert div matches")
+        if let match = matches.first, let range = Range(match.range(at: 1), in: html) {
+            var divContent = String(html[range])
+            log("Alert div content length: \(divContent.count) characters")
             
-            if let match = matches.first, let range = Range(match.range(at: 1), in: html) {
-                var divContent = String(html[range])
-                log("Alert div content length: \(divContent.count) characters")
-                log("Original alert div content: \(divContent)")
-                
-                // Clean up the content
-                divContent = divContent.replacingOccurrences(of: "<br/>", with: "\n", options: .caseInsensitive)
-                divContent = divContent.replacingOccurrences(of: "<br />", with: "\n", options: .caseInsensitive)
-                
-                let tagRegex = try? NSRegularExpression(pattern: "<[^>]+>", options: [])
-                divContent = tagRegex?.stringByReplacingMatches(in: divContent, range: NSRange(0..<divContent.utf16.count), withTemplate: "") ?? divContent
-                
-                let emojiRegex = try? NSRegularExpression(pattern: "[🟢🔴]", options: [])
-                divContent = emojiRegex?.stringByReplacingMatches(in: divContent, range: NSRange(0..<divContent.utf16.count), withTemplate: "") ?? divContent
-                
-                log("Cleaned alert div content: \(divContent)")
-                
-                var lines = divContent.components(separatedBy: .newlines)
-                    .map { $0.trimmingCharacters(in: .whitespaces) }
-                    .filter { !$0.isEmpty }
-                
-                log("Found \(lines.count) lines after cleaning")
-                log("Lines: \(lines)")
-                
-                func findIndex(prefixes: [String], start: Int = 0) -> Int? {
-                    for i in start..<lines.count {
-                        for p in prefixes {
-                            if lines[i].lowercased().hasPrefix(p.lowercased()) {
-                                log("Found '\(p)' at line \(i): '\(lines[i])'")
-                                return i
-                            }
-                        }
-                    }
-                    log("Could not find any of \(prefixes) in lines")
-                    return nil
-                }
-                
-                let certIdx = findIndex(prefixes: ["CertName:", "CertName："])
-                let mpIdx = findIndex(prefixes: ["MP Name:", "MP Name："])
-                let bindingIdx = findIndex(prefixes: ["Binding Certificates:", "Binding Certificates："], start: mpIdx ?? 0)
-                let certMatchingIdx = findIndex(prefixes: ["Certificate Matching Status:", "Certificate Matching Status："], start: bindingIdx ?? 0)
-                
-                log("Index positions:")
-                log("  certIdx: \(certIdx?.description ?? "nil")")
-                log("  mpIdx: \(mpIdx?.description ?? "nil")")
-                log("  bindingIdx: \(bindingIdx?.description ?? "nil")")
-                log("  certMatchingIdx: \(certMatchingIdx?.description ?? "nil")")
-                
-                func splitKV(line: String) -> (String, String) {
-                    let separators = [":", "："]
-                    for sep in separators {
-                        if let range = line.range(of: sep) {
-                            let k = String(line[..<range.lowerBound]).trimmingCharacters(in: .whitespaces)
-                            let v = String(line[range.upperBound...]).trimmingCharacters(in: .whitespaces)
-                            log("Split line '\(line)' -> key: '\(k)', value: '\(v)'")
-                            return (k, v)
-                        }
-                    }
-                    log("Could not split line: '\(line)'")
-                    return (line.trimmingCharacters(in: .whitespaces), "")
-                }
-                
-                // Parse Certificate Info
-                if let certIdx = certIdx {
-                    let end = mpIdx ?? (bindingIdx ?? lines.count)
-                    log("Parsing certificate from line \(certIdx) to \(end)")
+            // Clean up the content
+            divContent = divContent.replacingOccurrences(of: "<br/>", with: "\n", options: .caseInsensitive)
+            divContent = divContent.replacingOccurrences(of: "<br />", with: "\n", options: .caseInsensitive)
+            divContent = divContent.replacingOccurrences(of: "&emsp;", with: "    ", options: .caseInsensitive)
+            
+            // Remove HTML tags
+            let tagRegex = try? NSRegularExpression(pattern: "<[^>]+>", options: [])
+            divContent = tagRegex?.stringByReplacingMatches(in: divContent, range: NSRange(0..<divContent.utf16.count), withTemplate: "") ?? divContent
+            
+            // Remove emojis and special characters but keep text
+            let emojiRegex = try? NSRegularExpression(pattern: "[\\🟢🔴]", options: [])
+            divContent = emojiRegex?.stringByReplacingMatches(in: divContent, range: NSRange(0..<divContent.utf16.count), withTemplate: "") ?? divContent
+            
+            // Clean up multiple spaces and newlines
+            divContent = divContent.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            divContent = divContent.replacingOccurrences(of: "\\n\\s*\\n", with: "\n", options: .regularExpression)
+            
+            log("Cleaned alert div content: \(divContent)")
+            
+            var lines = divContent.components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            
+            log("Found \(lines.count) lines after cleaning")
+            
+            // SIMPLIFIED PARSING APPROACH
+            // Instead of complex line-by-line parsing, extract key information directly
+            
+            // Extract certificate status
+            if let certStatusRange = divContent.range(of: "Certificate Status:") {
+                let remaining = divContent[certStatusRange.upperBound...]
+                if let endOfLine = remaining.firstIndex(of: "\n") {
+                    let status = String(remaining[..<endOfLine]).trimmingCharacters(in: .whitespaces)
                     var cert = data["certificate"] as! [String: String]
-                    
-                    for i in certIdx..<end {
-                        let (k, v) = splitKV(line: lines[i])
-                        let lk = k.lowercased()
-                        
-                        if lk.hasPrefix("certname") {
-                            cert["name"] = v
-                            log("Set certificate name: \(v)")
-                        } else if lk.hasPrefix("effective date") {
-                            cert["effective"] = v
-                            log("Set effective date: \(v)")
-                        } else if lk.hasPrefix("expiration date") {
-                            cert["expiration"] = v
-                            log("Set expiration date: \(v)")
-                        } else if lk.hasPrefix("issuer") {
-                            cert["issuer"] = v
-                            log("Set issuer: \(v)")
-                        } else if lk.hasPrefix("country") {
-                            cert["country"] = v
-                            log("Set country: \(v)")
-                        } else if lk.hasPrefix("organization") {
-                            cert["organization"] = v
-                            log("Set organization: \(v)")
-                        } else if lk.hasPrefix("certificate number (hex)") {
-                            cert["number_hex"] = v
-                            log("Set certificate number (hex): \(v)")
-                        } else if lk.hasPrefix("certificate number (decimal)") {
-                            cert["number_decimal"] = v
-                            log("Set certificate number (decimal): \(v)")
-                        } else if lk.hasPrefix("certificate status") {
-                            cert["status"] = v
-                            log("Set certificate status: \(v)")
-                        }
-                    }
+                    cert["status"] = status
                     data["certificate"] = cert
-                    log("Final certificate data: \(cert)")
-                } else {
-                    log("WARNING: No certificate info found")
+                    log("Certificate Status: \(status)")
                 }
-                
-                // Parse MobileProvision Info
-                if let mpIdx = mpIdx {
-                    let end = bindingIdx ?? (certMatchingIdx ?? lines.count)
-                    log("Parsing mobileprovision from line \(mpIdx) to \(end)")
-                    var mp = data["mobileprovision"] as! [String: String]
-                    
-                    for i in mpIdx..<end {
-                        let (k, v) = splitKV(line: lines[i])
-                        let lk = k.lowercased()
-                        
-                        if lk.hasPrefix("mp name") {
-                            mp["name"] = v
-                            log("Set mobileprovision name: \(v)")
-                        } else if lk.hasPrefix("app id") {
-                            mp["app_id"] = v
-                            log("Set app id: \(v)")
-                        } else if lk.hasPrefix("identifier") {
-                            mp["identifier"] = v
-                            log("Set identifier: \(v)")
-                        } else if lk.hasPrefix("platform") {
-                            mp["platform"] = v
-                            log("Set platform: \(v)")
-                        } else if lk.hasPrefix("effective date") {
-                            if mp["effective"] == nil {
-                                mp["effective"] = v
-                                log("Set mobileprovision effective date: \(v)")
-                            }
-                        } else if lk.hasPrefix("expiration date") {
-                            if mp["expiration"] == nil {
-                                mp["expiration"] = v
-                                log("Set mobileprovision expiration date: \(v)")
-                            }
-                        }
-                    }
-                    data["mobileprovision"] = mp
-                    log("Final mobileprovision data: \(mp)")
-                } else {
-                    log("WARNING: No mobileprovision info found")
-                }
-                
-                // Parse Binding Certificate
-                if let bindingIdx = bindingIdx {
-                    let cert1Idx = findIndex(prefixes: ["Certificate 1:", "Certificate 1：", "Certificate 1"], start: bindingIdx)
-                    if let cert1Idx = cert1Idx {
-                        let cert2Idx = findIndex(prefixes: ["Certificate 2:", "Certificate 2：", "Certificate 2"], start: cert1Idx + 1)
-                        let end = cert2Idx ?? (certMatchingIdx ?? lines.count)
-                        log("Parsing binding certificate from line \(cert1Idx + 1) to \(end)")
-                        
-                        var bc1 = data["binding_certificate_1"] as! [String: String]
-                        
-                        for i in (cert1Idx + 1)..<end {
-                            let (k, v) = splitKV(line: lines[i])
-                            let lk = k.lowercased()
-                            
-                            if lk.hasPrefix("certificate status") {
-                                bc1["status"] = v
-                                log("Set binding certificate status: \(v)")
-                            } else if lk.hasPrefix("certificate number (hex)") {
-                                bc1["number_hex"] = v
-                                log("Set binding certificate number (hex): \(v)")
-                            } else if lk.hasPrefix("certificate number (decimal)") {
-                                bc1["number_decimal"] = v
-                                log("Set binding certificate number (decimal): \(v)")
-                            }
-                        }
-                        data["binding_certificate_1"] = bc1
-                        log("Final binding certificate data: \(bc1)")
-                    } else {
-                        log("WARNING: Could not find Certificate 1 within binding certificates section")
-                    }
-                } else {
-                    log("WARNING: No binding certificates section found")
-                }
-                
-                // Parse Permissions
-                let permKeys = [
-                    "Apple Push Notification Service",
-                    "HealthKit",
-                    "VPN",
-                    "Communication Notifications",
-                    "Time-sensitive Notifications"
-                ]
-                log("Looking for permissions in lines")
-                
-                var perms = data["permissions"] as! [String: String]
-                for line in lines {
-                    for pk in permKeys {
-                        if line.hasPrefix(pk) {
-                            let (_, v) = splitKV(line: line)
-                            perms[pk] = v
-                            log("Found permission '\(pk)': \(v)")
-                        }
-                    }
-                }
-                data["permissions"] = perms
-                
-                // Parse Certificate Matching Status
-                if let certMatchingIdx = certMatchingIdx {
-                    let (_, v) = splitKV(line: lines[certMatchingIdx])
-                    data["certificate_matching_status"] = v
-                    log("Certificate matching status: \(v)")
-                } else {
-                    log("WARNING: No certificate matching status found")
-                }
-                
-                log("Final parsed data: \(data)")
-                log("=== Finished parseHTML() Successfully ===")
-                return data
-            } else {
-                log("WARNING: No alert div found in HTML")
             }
+            
+            // Extract certificate matching status
+            if let matchStatusRange = divContent.range(of: "Certificate Matching Status:") {
+                let remaining = divContent[matchStatusRange.upperBound...]
+                if let endOfLine = remaining.firstIndex(of: "\n") {
+                    let status = String(remaining[..<endOfLine]).trimmingCharacters(in: .whitespaces)
+                    data["certificate_matching_status"] = status
+                    log("Certificate Matching Status: \(status)")
+                }
+            }
+            
+            // Extract effective and expiration dates
+            if let effDateRange = divContent.range(of: "Effective Date:") {
+                let remaining = divContent[effDateRange.upperBound...]
+                if let endOfLine = remaining.firstIndex(of: "\n") {
+                    let date = String(remaining[..<endOfLine]).trimmingCharacters(in: .whitespaces)
+                    var cert = data["certificate"] as! [String: String]
+                    cert["effective"] = date
+                    data["certificate"] = cert
+                }
+            }
+            
+            if let expDateRange = divContent.range(of: "Expiration Date:") {
+                let remaining = divContent[expDateRange.upperBound...]
+                if let endOfLine = remaining.firstIndex(of: "\n") {
+                    let date = String(remaining[..<endOfLine]).trimmingCharacters(in: .whitespaces)
+                    var cert = data["certificate"] as! [String: String]
+                    cert["expiration"] = date
+                    data["certificate"] = cert
+                }
+            }
+            
+            // Extract certificate name
+            if let nameRange = divContent.range(of: "CertName:") {
+                let remaining = divContent[nameRange.upperBound...]
+                if let endOfLine = remaining.firstIndex(of: "\n") {
+                    let name = String(remaining[..<endOfLine]).trimmingCharacters(in: .whitespaces)
+                    var cert = data["certificate"] as! [String: String]
+                    cert["name"] = name
+                    data["certificate"] = cert
+                }
+            }
+            
+            // Extract MP name
+            if let mpNameRange = divContent.range(of: "MP Name:") {
+                let remaining = divContent[mpNameRange.upperBound...]
+                if let endOfLine = remaining.firstIndex(of: "\n") {
+                    let name = String(remaining[..<endOfLine]).trimmingCharacters(in: .whitespaces)
+                    var mp = data["mobileprovision"] as! [String: String]
+                    mp["name"] = name
+                    data["mobileprovision"] = mp
+                }
+            }
+            
+            // Check for key phrases to determine overall status
+            let overallStatus: String
+            if divContent.contains("🟢Good") || divContent.contains("🟢Match") {
+                overallStatus = "Valid"
+            } else if divContent.contains("🔴") {
+                overallStatus = "Invalid"
+            } else {
+                overallStatus = "Unknown"
+            }
+            
+            data["overall_status"] = overallStatus
+            log("Overall Status: \(overallStatus)")
+            
+            log("Final parsed data: \(data)")
+            log("=== Finished parseHTML() Successfully ===")
+            return data
         } else {
-            log("ERROR: Could not create div regex")
+            log("WARNING: No alert div found in HTML")
         }
-        
-        log("ERROR: Could not parse certificate info from HTML")
-        log("HTML sample (chars 0-3000): \(html.prefix(3000))")
-        log("=== parseHTML() Failed ===")
-        
-        return ["error": "No certificate info found in response", "raw_html_preview": String(html.prefix(1000))]
+    } else {
+        log("ERROR: Could not create div regex")
     }
+    
+    // Fallback: Try to extract key information directly from HTML
+    log("Attempting fallback parsing...")
+    
+    // Check for key status indicators in the raw HTML
+    if html.contains("🟢Good") {
+        data["overall_status"] = "Valid"
+        log("Fallback: Found 🟢Good indicator")
+    } else if html.contains("🔴Mismatch") || html.contains("🔴No Permission") {
+        data["overall_status"] = "Invalid"
+        log("Fallback: Found 🔴 indicator")
+    } else {
+        data["overall_status"] = "Unknown"
+        log("Fallback: No clear status indicators found")
+    }
+    
+    log("=== parseHTML() Completed with Fallback ===")
+    
+    return ["error": "Could not fully parse certificate info", 
+            "overall_status": data["overall_status"] as? String ?? "Unknown",
+            "raw_html_preview": String(html.prefix(1000))]
+}
     
     // MARK: - Main Check Function
     static func checkCert(mobileProvision: Data, mobileProvisionFilename: String = "example.mobileprovision",
