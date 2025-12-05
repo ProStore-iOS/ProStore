@@ -30,10 +30,10 @@ struct AboutView: View {
             avatarURL: URL(string: "https://github.com/khcrysalis.png")!
         ),
         Credit(
-            name: "Loyahdev",
-            role: "iOS Certificates Source",
-            profileURL: URL(string: "https://github.com/loyahdev")!,
-            avatarURL: URL(string: "https://github.com/loyahdev.png")!
+            name: "AppleP12",
+            role: "Certificate Status Check",
+            profileURL: URL(string: "https://check-p12.applep12.com/")!,
+            avatarURL: URL(string: "https://applep12.com/favicon/apple-touch-icon.png")!
         )
     ]
 

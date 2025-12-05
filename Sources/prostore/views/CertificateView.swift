@@ -45,7 +45,6 @@ struct CertificateView: View {
     @State private var certExpiries: [String: Date?] = [:]
     @State private var certStatuses: [String: String] = [:]
     @State private var showAddCertificateSheet = false
-    @State private var showLoyahdevSheet = false
     @State private var showOfficialSheet = false
     @State private var editingCertificate: CustomCertificate? = nil // Used only for edit sheet (.sheet(item:))
     @State private var selectedCert: String? = nil
@@ -70,11 +69,6 @@ struct CertificateView: View {
                     Label("Add from Files", systemImage: "folder.badge.plus")
                 }
                 Button {
-                    showLoyahdevSheet = true
-                } label: {
-                    Label("Add from Loyahdev", systemImage: "globe")
-                }
-                Button {
                     showOfficialSheet = true
                 } label: {
                     Label("Add from Official", systemImage: "globe")
@@ -93,13 +87,6 @@ struct CertificateView: View {
             }
         }) {
             AddCertificateView(onSave: { newlyAddedFolder = $0 })
-                .presentationDetents([.large])
-        }
-        // Loyahdev sheet
-        .sheet(isPresented: $showLoyahdevSheet, onDismiss: {
-            reloadCertificatesAndEnsureSelection()
-        }) {
-            LoyahdevCertificatesView()
                 .presentationDetents([.large])
         }
         // Official sheet
