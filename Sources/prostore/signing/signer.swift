@@ -72,8 +72,11 @@ fileprivate class SigningManager {
                     to: inputsDir
                 )
                 progressUpdate("Unzipping IPA 🔓", 0.25)
-                try extractIPA(ipaURL: localIPA, to: workDir, progressUpdate: { status, progress in
-                    progressUpdate(status, 0.25 + (progress * 0.25))
+                try extractIPA(ipaURL: localIPA, to: workDir, progressUpdate: { progress in
+                    // Convert 0.0-1.0 progress to 0.25-0.5 range
+                    let overallProgress = 0.25 + (progress * 0.25)
+                    let pct = Int(progress * 100)
+                    progressUpdate("Unzipping IPA 🔓 (\(pct)%)", overallProgress)
                 })
                 let payloadDir = workDir.appendingPathComponent("Payload")
                 let appDir = try findAppBundle(in: payloadDir)
@@ -104,8 +107,11 @@ fileprivate class SigningManager {
                     from: workDir,
                     originalIPAURL: ipaURL,
                     outputDir: tmpRoot,
-                    progressUpdate: { status, progress in
-                        progressUpdate(status, 0.75 + (progress * 0.25))
+                    progressUpdate: { progress in
+                        // Convert 0.0-1.0 progress to 0.75-1.0 range
+                        let overallProgress = 0.75 + (progress * 0.25)
+                        let pct = Int(progress * 100)
+                        progressUpdate("Zipping signed IPA 📦 (\(pct)%)", overallProgress)
                     }
                 )
                 completion(.success(signedIPAURL))
@@ -150,13 +156,12 @@ fileprivate class SigningManager {
     static func extractIPA(
         ipaURL: URL,
         to workDir: URL,
-        progressUpdate: @escaping (String, Double) -> Void
+        progressUpdate: @escaping (Double) -> Void
     ) throws {
         let fm = FileManager.default
         let progress = Progress()
         let observation = progress.observe(\Progress.fractionCompleted) { prog, _ in
-            let pct = Int(prog.fractionCompleted * 100)
-            progressUpdate("Unzipping IPA 🔓 (\(pct)%)", prog.fractionCompleted)
+            progressUpdate(prog.fractionCompleted)
         }
         defer {
             observation.invalidate()
@@ -180,16 +185,14 @@ fileprivate class SigningManager {
         from workDir: URL,
         originalIPAURL: URL,
         outputDir: URL,
-        progressUpdate: @escaping (String, Double) -> Void
+        progressUpdate: @escaping (Double) -> Void
     ) throws -> URL {
         let fm = FileManager.default
-        let originalBase = originalIPAURL.deletingPathExtension().lastPathComponent
         let finalFileName = "signed_\(UUID().uuidString).ipa"
         let signedIpa = outputDir.appendingPathComponent(finalFileName)
         let progress = Progress()
         let observation = progress.observe(\Progress.fractionCompleted) { prog, _ in
-            let pct = Int(prog.fractionCompleted * 100)
-            progressUpdate("Zipping signed IPA 📦 (\(pct)%)", prog.fractionCompleted)
+            progressUpdate(prog.fractionCompleted)
         }
         defer {
             observation.invalidate()

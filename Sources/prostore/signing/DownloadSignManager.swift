@@ -153,56 +153,57 @@ class DownloadSignManager: ObservableObject {
         }
     }
     
-    private func signIPA(ipaURL: URL, p12URL: URL, provURL: URL, password: String, appName: String) {
-        DispatchQueue.main.async {
-            self.status = "Starting signing process..."
-            self.progress = 0.5
-        }
-        
-        signer.sign(
-            ipaURL: ipaURL,
-            p12URL: p12URL,
-            provURL: provURL,
-            p12Password: password,
-            progressUpdate: { [weak self] status, progress in
-                DispatchQueue.main.async {
-                    // Convert from 0-1 range within signing phase to 0.5-1.0 overall range
-                    let overallProgress = 0.5 + (progress * 0.5)
-                    self?.progress = overallProgress
-                    let percent = Int(overallProgress * 100)
-                    self?.status = "\(status) (\(percent)%)"
-                }
-            },
-            completion: { [weak self] result in
-                DispatchQueue.main.async {
-                    switch result {
-                    case .success(let signedIPAURL):
-                        self?.progress = 1.0
-                        self?.status = "✅ Successfully signed! Saved to: \(signedIPAURL.lastPathComponent)"
-                        self?.showSuccess = true
-                        
-                        // Hide progress bar after 3 seconds
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                            self?.isProcessing = false
-                            self?.showSuccess = false
-                            self?.progress = 0.0
-                            self?.status = ""
-                        }
-                        
-                        // Clean up original downloaded IPA
-                        try? FileManager.default.removeItem(at: ipaURL)
-                        
-                    case .failure(let error):
-                        self?.status = "❌ Signing failed: \(error.localizedDescription)"
+private func signIPA(ipaURL: URL, p12URL: URL, provURL: URL, password: String, appName: String) {
+    DispatchQueue.main.async {
+        self.status = "Starting signing process..."
+        self.progress = 0.5
+    }
+    
+    signer.sign(
+        ipaURL: ipaURL,
+        p12URL: p12URL,
+        provURL: provURL,
+        p12Password: password,
+        progressUpdate: { [weak self] status, progress in
+            DispatchQueue.main.async {
+                // progress is already in the range 0.0-1.0 for the signing phase
+                // We need to map it to 0.5-1.0 overall
+                let overallProgress = 0.5 + (progress * 0.5)
+                self?.progress = overallProgress
+                let percent = Int(overallProgress * 100)
+                self?.status = "\(status) (\(percent)%)"
+            }
+        },
+        completion: { [weak self] result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let signedIPAURL):
+                    self?.progress = 1.0
+                    self?.status = "✅ Successfully signed! Saved to: \(signedIPAURL.lastPathComponent)"
+                    self?.showSuccess = true
+                    
+                    // Hide progress bar after 3 seconds
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                         self?.isProcessing = false
-                        
-                        // Clean up temp files
-                        try? FileManager.default.removeItem(at: ipaURL)
+                        self?.showSuccess = false
+                        self?.progress = 0.0
+                        self?.status = ""
                     }
+                    
+                    // Clean up original downloaded IPA
+                    try? FileManager.default.removeItem(at: ipaURL)
+                    
+                case .failure(let error):
+                    self?.status = "❌ Signing failed: \(error.localizedDescription)"
+                    self?.isProcessing = false
+                    
+                    // Clean up temp files
+                    try? FileManager.default.removeItem(at: ipaURL)
                 }
             }
-        )
-    }
+        }
+    )
+}
     
     func cancel() {
         downloadTask?.cancel()
