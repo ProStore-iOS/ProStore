@@ -154,7 +154,7 @@ struct CertificateView: View {
                 .font(.title2)
                 .fontWeight(.semibold)
                 .foregroundColor(.primary)
-                .lineLimit(2)
+                .lineLimit(1)
                 .minimumScaleFactor(0.8)
                 .multilineTextAlignment(.center)
             if let expiry = certExpiries[cert.folderName], let validExpiry = expiry {
