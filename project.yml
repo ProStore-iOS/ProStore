@@ -48,10 +48,3 @@ targets:
         product: ZsignSwift
       - package: ZIPFoundation
         product: ZIPFoundation
-
-
-
-
-
-
-
