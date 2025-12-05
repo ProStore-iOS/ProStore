@@ -18,9 +18,6 @@ struct MainSidebarView: View {
                 NavigationLink(value: SidebarItem.apps) {
                     Label("Apps", systemImage: "square.grid.2x2.fill")
                 }
-                NavigationLink(value: SidebarItem.signer) {
-                    Label("Signer", systemImage: "hammer")
-                }
                 NavigationLink(value: SidebarItem.certificates) {
                     Label("Certificates", systemImage: "key")
                 }
@@ -34,12 +31,6 @@ struct MainSidebarView: View {
             .navigationTitle("ProStore")
         } detail: {
             switch selected {
-            case .signer:
-                NavigationStack {
-                    SignerView()
-                        .navigationTitle("Signer")
-                        .navigationBarTitleDisplayMode(.large)
-                }
             case .certificates:
                 NavigationStack {
                     CertificateView()
@@ -82,7 +73,6 @@ struct MainSidebarView: View {
 }
 
 enum SidebarItem: Hashable {
-    case signer
     case updater
     case certificates
     case apps
