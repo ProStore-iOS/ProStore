@@ -412,11 +412,11 @@ static func parseHTML(html: String) -> [String: Any] {
         log("Fallback: Found 🔴 indicator")
     }
     
-    var data: [String: Any] = ["overall_status": overallStatus]
+    var fallbackData: [String: Any] = ["overall_status": overallStatus]
     
     log("=== parseHTML() Completed with Fallback ===")
     
-    return data
+    return fallbackData
 }
     
     // MARK: - Main Check Function
