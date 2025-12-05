@@ -208,12 +208,11 @@ static func parseHTML(html: String) -> [String: Any] {
             log("Alert div content length: \(divContent.count) characters")
             
             // Clean up the content but preserve line breaks
-            // First replace <br/> with newlines
             divContent = divContent.replacingOccurrences(of: "<br/>", with: "\n", options: .caseInsensitive)
             divContent = divContent.replacingOccurrences(of: "<br />", with: "\n", options: .caseInsensitive)
             divContent = divContent.replacingOccurrences(of: "&emsp;", with: "    ", options: .caseInsensitive)
             
-            // Now remove HTML tags
+            // Remove HTML tags
             let tagRegex = try? NSRegularExpression(pattern: "<[^>]+>", options: [])
             divContent = tagRegex?.stringByReplacingMatches(in: divContent, range: NSRange(0..<divContent.utf16.count), withTemplate: "") ?? divContent
             
@@ -235,134 +234,160 @@ static func parseHTML(html: String) -> [String: Any] {
             log("Found \(lines.count) lines after cleaning")
             log("Lines: \(lines)")
             
-            // Create a dictionary to store all parsed data
-            var parsedDict: [String: String] = [:]
+            // Track which section we're in
+            enum Section {
+                case certificate
+                case mobileprovision
+                case bindingCertificates
+                case permissions
+                case unknown
+            }
+            
+            var currentSection: Section = .unknown
+            var bindingCertIndex = 0
             
             // Parse each line
             for line in lines {
-                // Handle different colon types
+                // Detect section changes
+                if line.contains("-----------------------------------") {
+                    currentSection = .mobileprovision
+                    continue
+                } else if line.contains("Binding Certificates:") {
+                    currentSection = .bindingCertificates
+                    continue
+                } else if line.contains("Permission Status:") {
+                    currentSection = .permissions
+                    continue
+                }
+                
+                // Parse line based on current section
                 let separators = [": ", "："]
+                var parsedKey: String?
+                var parsedValue: String?
+                
                 for separator in separators {
-                    if line.contains(separator) {
-                        let parts = line.components(separatedBy: separator)
-                        if parts.count >= 2 {
-                            let key = parts[0].trimmingCharacters(in: .whitespaces)
-                            let value = parts[1...].joined(separator: separator).trimmingCharacters(in: .whitespaces)
-                            parsedDict[key] = value
-                            break
+                    if let range = line.range(of: separator) {
+                        parsedKey = String(line[..<range.lowerBound]).trimmingCharacters(in: .whitespaces)
+                        parsedValue = String(line[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+                        break
+                    }
+                }
+                
+                guard let key = parsedKey, let value = parsedValue else { continue }
+                
+                switch currentSection {
+                case .certificate, .unknown:
+                    // Parse main certificate info (before separator)
+                    var cert = data["certificate"] as! [String: String]
+                    let lk = key.lowercased()
+                    
+                    if lk.contains("certname") {
+                        cert["name"] = value
+                    } else if lk.contains("effective date") && !lk.contains("cert") {
+                        cert["effective"] = value
+                    } else if lk.contains("expiration date") && !lk.contains("cert") {
+                        cert["expiration"] = value
+                    } else if lk.contains("issuer") {
+                        cert["issuer"] = value
+                    } else if lk.contains("country") {
+                        cert["country"] = value
+                    } else if lk.contains("organization") {
+                        cert["organization"] = value
+                    } else if lk.contains("certificate number (hex)") {
+                        cert["number_hex"] = value
+                    } else if lk.contains("certificate number (decimal)") {
+                        cert["number_decimal"] = value
+                    } else if lk.contains("certificate status") && !lk.contains("binding") {
+                        cert["status"] = value
+                    }
+                    data["certificate"] = cert
+                    
+                case .mobileprovision:
+                    // Parse mobileprovision info
+                    var mp = data["mobileprovision"] as! [String: String]
+                    let lk = key.lowercased()
+                    
+                    if lk.contains("mp name") {
+                        mp["name"] = value
+                    } else if lk.contains("app id") {
+                        mp["app_id"] = value
+                    } else if lk.contains("identifier") {
+                        mp["identifier"] = value
+                    } else if lk.contains("platform") {
+                        mp["platform"] = value
+                    } else if lk.contains("effective date") {
+                        mp["effective"] = value
+                    } else if lk.contains("expiration date") {
+                        mp["expiration"] = value
+                    }
+                    data["mobileprovision"] = mp
+                    
+                case .bindingCertificates:
+                    // Parse binding certificates - only care about Certificate 1
+                    if key.contains("Certificate 1") {
+                        bindingCertIndex = 1
+                    } else if key.contains("Certificate 2") || key.contains("Certificate 3") {
+                        bindingCertIndex = 0 // Stop parsing other certificates
+                        continue
+                    }
+                    
+                    if bindingCertIndex == 1 {
+                        var bc1 = data["binding_certificate_1"] as! [String: String]
+                        let lk = key.lowercased()
+                        
+                        if lk.contains("certificate status") {
+                            bc1["status"] = value
+                        } else if lk.contains("certificate number (hex)") {
+                            bc1["number_hex"] = value
+                        } else if lk.contains("certificate number (decimal)") {
+                            bc1["number_decimal"] = value
                         }
+                        data["binding_certificate_1"] = bc1
+                    }
+                    
+                case .permissions:
+                    // Parse permissions
+                    var perms = data["permissions"] as! [String: String]
+                    let permKeys = [
+                        "Apple Push Notification Service",
+                        "HealthKit", 
+                        "VPN",
+                        "Communication Notifications",
+                        "Time-sensitive Notifications"
+                    ]
+                    
+                    for permKey in permKeys {
+                        if key.contains(permKey) {
+                            perms[permKey] = value
+                        }
+                    }
+                    data["permissions"] = perms
+                    
+                    // Also check for Certificate Matching Status in this section
+                    if key.contains("Certificate Matching Status") {
+                        data["certificate_matching_status"] = value
                     }
                 }
             }
             
-            log("Parsed dictionary: \(parsedDict)")
+            // Determine overall status based on main certificate status and matching status
+            let cert = data["certificate"] as! [String: String]
+            let certStatus = cert["status"] ?? ""
+            let matchingStatus = data["certificate_matching_status"] as? String ?? ""
             
-            // Extract certificate info
-            var cert = data["certificate"] as! [String: String]
-            if let certName = parsedDict["CertName"] {
-                cert["name"] = certName
-            }
-            if let effDate = parsedDict["Effective Date"] {
-                cert["effective"] = effDate
-            }
-            if let expDate = parsedDict["Expiration Date"] {
-                cert["expiration"] = expDate
-            }
-            if let issuer = parsedDict["Issuer"] {
-                cert["issuer"] = issuer
-            }
-            if let country = parsedDict["Country"] {
-                cert["country"] = country
-            }
-            if let org = parsedDict["Organization"] {
-                cert["organization"] = org
-            }
-            if let numHex = parsedDict["Certificate Number (Hex)"] {
-                cert["number_hex"] = numHex
-            }
-            if let numDec = parsedDict["Certificate Number (Decimal)"] {
-                cert["number_decimal"] = numDec
-            }
-            if let certStatus = parsedDict["Certificate Status"] {
-                cert["status"] = certStatus
-            }
-            data["certificate"] = cert
-            
-            // Extract mobileprovision info
-            var mp = data["mobileprovision"] as! [String: String]
-            if let mpName = parsedDict["MP Name"] {
-                mp["name"] = mpName
-            }
-            if let appId = parsedDict["App ID"] {
-                mp["app_id"] = appId
-            }
-            if let identifier = parsedDict["Identifier"] {
-                mp["identifier"] = identifier
-            }
-            if let platform = parsedDict["Platform"] {
-                mp["platform"] = platform
-            }
-            // Look for mobileprovision dates (they might be duplicates from certificate section)
-            for (key, value) in parsedDict {
-                let lk = key.lowercased()
-                if lk.contains("effective date") && !lk.contains("cert") {
-                    mp["effective"] = value
-                }
-                if lk.contains("expiration date") && !lk.contains("cert") {
-                    mp["expiration"] = value
-                }
-            }
-            data["mobileprovision"] = mp
-            
-            // Extract binding certificate info
-            // Look for "Certificate 1" and related info
-            var bc1 = data["binding_certificate_1"] as! [String: String]
-            for (key, value) in parsedDict {
-                if key.contains("Certificate 1") || key.contains("Certificate Status") {
-                    bc1["status"] = value
-                } else if key.contains("Certificate Number (Hex)") && (bc1["number_hex"] == nil) {
-                    bc1["number_hex"] = value
-                } else if key.contains("Certificate Number (Decimal)") && (bc1["number_decimal"] == nil) {
-                    bc1["number_decimal"] = value
-                }
-            }
-            data["binding_certificate_1"] = bc1
-            
-            // Extract certificate matching status
-            if let matchStatus = parsedDict["Certificate Matching Status"] {
-                data["certificate_matching_status"] = matchStatus
-            }
-            
-            // Extract permissions
-            var perms = data["permissions"] as! [String: String]
-            let permKeys = [
-                "Apple Push Notification Service",
-                "HealthKit", 
-                "VPN",
-                "Communication Notifications",
-                "Time-sensitive Notifications"
-            ]
-            
-            for key in permKeys {
-                if let value = parsedDict[key] {
-                    perms[key] = value
-                }
-            }
-            data["permissions"] = perms
-            
-            // Determine overall status
             let overallStatus: String
-            if let certStatus = cert["status"], certStatus.lowercased().contains("good") {
+            if certStatus.lowercased().contains("good") && matchingStatus.lowercased().contains("match") {
                 overallStatus = "Valid"
-            } else if let matchStatus = data["certificate_matching_status"] as? String,
-                     matchStatus.lowercased().contains("match") {
-                overallStatus = "Valid"
+            } else if certStatus.lowercased().contains("good") || matchingStatus.lowercased().contains("match") {
+                overallStatus = "Partially Valid"
             } else {
-                overallStatus = "Unknown"
+                overallStatus = "Invalid"
             }
             
             data["overall_status"] = overallStatus
             log("Overall Status: \(overallStatus)")
+            log("Certificate Status: \(certStatus)")
+            log("Certificate Matching Status: \(matchingStatus)")
             
             log("Final parsed data: \(data)")
             log("=== Finished parseHTML() Successfully ===")
@@ -387,14 +412,11 @@ static func parseHTML(html: String) -> [String: Any] {
         log("Fallback: Found 🔴 indicator")
     }
     
-    data["overall_status"] = overallStatus
-    log("Fallback Overall Status: \(overallStatus)")
+    var data: [String: Any] = ["overall_status": overallStatus]
     
     log("=== parseHTML() Completed with Fallback ===")
     
-    return ["error": "Could not fully parse certificate info", 
-            "overall_status": overallStatus,
-            "raw_html_preview": String(html.prefix(1000))]
+    return data
 }
     
     // MARK: - Main Check Function
