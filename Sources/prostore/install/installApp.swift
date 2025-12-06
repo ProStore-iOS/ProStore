@@ -402,7 +402,6 @@ let sslDir = documents.appendingPathComponent("SSL", isDirectory: true)
 var tlsIdentity: sec_identity_t? = nil
 var tlsEnabled = false
 let p12URL = sslDir.appendingPathComponent("localhost.p12")
-let fm = FileManager.default
 
 if fm.fileExists(atPath: p12URL.path) {
     if let pData = try? Data(contentsOf: p12URL) {
@@ -417,19 +416,15 @@ if fm.fileExists(atPath: p12URL.path) {
             
             // The import dictionary values are Any; safely cast to SecIdentity
             if let identityAny = first[kSecImportItemIdentity as String] {
-                if let identityRef = identityAny as? SecIdentity {
-                    // Convert to sec_identity_t for sec_protocol_options_set_local_identity()
-                    if let secId = sec_identity_create(identityRef) {
-                        tlsIdentity = secId
-                        tlsEnabled = true
-                        print("TLS identity loaded from PKCS#12 — TLS enabled.")
-                        // NOTE: Do NOT free sec_identity_t here; leave it for the listener while running.
-                    } else {
-                        print("sec_identity_create failed; falling back to HTTP")
-                    }
+                let identityRef = identityAny as! SecIdentity
+                // Convert to sec_identity_t for sec_protocol_options_set_local_identity()
+                if let secId = sec_identity_create(identityRef) {
+                    tlsIdentity = secId
+                    tlsEnabled = true
+                    print("TLS identity loaded from PKCS#12 — TLS enabled.")
+                    // NOTE: Do NOT free sec_identity_t here; leave it for the listener while running.
                 } else {
-                    // Value existed but wasn't castable to SecIdentity
-                    print("PKCS#12 import produced a value that isn't SecIdentity. Will start HTTP only.")
+                    print("sec_identity_create failed; falling back to HTTP")
                 }
             } else {
                 // No identity entry in the import result
