@@ -402,6 +402,7 @@ let sslDir = documents.appendingPathComponent("SSL", isDirectory: true)
 var tlsIdentity: sec_identity_t? = nil
 var tlsEnabled = false
 let p12URL = sslDir.appendingPathComponent("localhost.p12")
+let fm = FileManager.default
 
 if fm.fileExists(atPath: p12URL.path) {
     if let pData = try? Data(contentsOf: p12URL) {
@@ -409,25 +410,37 @@ if fm.fileExists(atPath: p12URL.path) {
         let options: CFDictionary = [kSecImportExportPassphrase as String: ""] as CFDictionary
         var items: CFArray? = nil
         let status = SecPKCS12Import(pData as CFData, options, &items)
-        
+
         if status == errSecSuccess,
-        let arr = items as? [[String: Any]],
-        let first = arr.first {
-    
-            let identityRef = first[kSecImportItemIdentity as String] as SecIdentity
-    
-            if let secId = sec_identity_create(identityRef) {
-                tlsIdentity = secId
-                tlsEnabled = true
+           let arr = items as? [[String: Any]],
+           let first = arr.first {
+            
+            // The import dictionary values are Any; safely cast to SecIdentity
+            if let identityAny = first[kSecImportItemIdentity as String] {
+                if let identityRef = identityAny as? SecIdentity {
+                    // Convert to sec_identity_t for sec_protocol_options_set_local_identity()
+                    if let secId = sec_identity_create(identityRef) {
+                        tlsIdentity = secId
+                        tlsEnabled = true
+                        print("TLS identity loaded from PKCS#12 — TLS enabled.")
+                        // NOTE: Do NOT free sec_identity_t here; leave it for the listener while running.
+                    } else {
+                        print("sec_identity_create failed; falling back to HTTP")
+                    }
+                } else {
+                    // Value existed but wasn't castable to SecIdentity
+                    print("PKCS#12 import produced a value that isn't SecIdentity. Will start HTTP only.")
+                }
             } else {
-                print("sec_identity_create failed; falling back to HTTP")
+                // No identity entry in the import result
+                print("PKCS#12 import produced no SecIdentity. Will start HTTP only.")
             }
-    
+
         } else {
-            print("Could not import PKCS#12 or extract SecIdentity (status \(status)). Will start HTTP only.")
+            print("PKCS12 import failed (status \(status)). Will start HTTP only.")
         }
     } else {
-        print("Failed to read PKCS#12 file; starting HTTP only.")
+        print("Failed to read PKCS#12 file at \(p12URL.path); starting HTTP only.")
     }
 } else {
     print("No PKCS#12 found at \(p12URL.path); starting HTTP only.")
