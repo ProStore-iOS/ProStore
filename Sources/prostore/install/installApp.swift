@@ -397,49 +397,52 @@ public func installApp(from ipaURL: URL) throws {
         }
     }
 
-// 6) Start local server. If PKCS#12 exists at Documents/SSL/localhost.p12, try to use it for TLS.
-let sslDir = documents.appendingPathComponent("SSL", isDirectory: true)
-var tlsIdentity: sec_identity_t? = nil
-var tlsEnabled = false
-let p12URL = sslDir.appendingPathComponent("localhost.p12")
+    // 6) Start local server. If PKCS#12 exists at Documents/SSL/localhost.p12, try to use it for TLS.
+    let sslDir = documents.appendingPathComponent("SSL", isDirectory: true)
+    var tlsIdentity: sec_identity_t? = nil
+    var tlsEnabled = false
+    let p12URL = sslDir.appendingPathComponent("localhost.p12")
+    
+    // REMOVED DUPLICATE: let fm = FileManager.default - fm is already declared at function start
 
-if fm.fileExists(atPath: p12URL.path) {
-    if let pData = try? Data(contentsOf: p12URL) {
-        // PKCS#12 has no password; pass empty string
-        let options: CFDictionary = [kSecImportExportPassphrase as String: ""] as CFDictionary
-        var items: CFArray? = nil
-        let status = SecPKCS12Import(pData as CFData, options, &items)
+    if fm.fileExists(atPath: p12URL.path) {
+        if let pData = try? Data(contentsOf: p12URL) {
+            // PKCS#12 has no password; pass empty string
+            let options: CFDictionary = [kSecImportExportPassphrase as String: ""] as CFDictionary
+            var items: CFArray? = nil
+            let status = SecPKCS12Import(pData as CFData, options, &items)
 
-        if status == errSecSuccess,
-           let arr = items as? [[String: Any]],
-           let first = arr.first {
-            
-            // The import dictionary values are Any; safely cast to SecIdentity
-            if let identityAny = first[kSecImportItemIdentity as String] {
-                let identityRef = identityAny as! SecIdentity
-                // Convert to sec_identity_t for sec_protocol_options_set_local_identity()
-                if let secId = sec_identity_create(identityRef) {
-                    tlsIdentity = secId
-                    tlsEnabled = true
-                    print("TLS identity loaded from PKCS#12 — TLS enabled.")
-                    // NOTE: Do NOT free sec_identity_t here; leave it for the listener while running.
+            if status == errSecSuccess,
+               let arr = items as? [[String: Any]],
+               let first = arr.first {
+                
+                // The import dictionary values are Any; safely cast to SecIdentity
+                if let identityAny = first[kSecImportItemIdentity as String] {
+                    // FIXED: Use forced cast instead of conditional cast
+                    let identityRef = identityAny as! SecIdentity
+                    // Convert to sec_identity_t for sec_protocol_options_set_local_identity()
+                    if let secId = sec_identity_create(identityRef) {
+                        tlsIdentity = secId
+                        tlsEnabled = true
+                        print("TLS identity loaded from PKCS#12 — TLS enabled.")
+                        // NOTE: Do NOT free sec_identity_t here; leave it for the listener while running.
+                    } else {
+                        print("sec_identity_create failed; falling back to HTTP")
+                    }
                 } else {
-                    print("sec_identity_create failed; falling back to HTTP")
+                    // No identity entry in the import result
+                    print("PKCS#12 import produced no SecIdentity. Will start HTTP only.")
                 }
-            } else {
-                // No identity entry in the import result
-                print("PKCS#12 import produced no SecIdentity. Will start HTTP only.")
-            }
 
+            } else {
+                print("PKCS12 import failed (status \(status)). Will start HTTP only.")
+            }
         } else {
-            print("PKCS12 import failed (status \(status)). Will start HTTP only.")
+            print("Failed to read PKCS#12 file at \(p12URL.path); starting HTTP only.")
         }
     } else {
-        print("Failed to read PKCS#12 file at \(p12URL.path); starting HTTP only.")
+        print("No PKCS#12 found at \(p12URL.path); starting HTTP only.")
     }
-} else {
-    print("No PKCS#12 found at \(p12URL.path); starting HTTP only.")
-}
 
     // Now we can write files and start server with chosen protocol (https if tlsEnabled)
     // We'll pick port 7404 by default.
