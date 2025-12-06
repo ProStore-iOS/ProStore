@@ -203,7 +203,7 @@ public struct AppDetailView: View {
                         }) {
                             HStack {
                                 Image(systemName: "arrow.down.circle.fill")
-                                Text("Download & Sign")
+                                Text("Install")
                                     .fontWeight(.semibold)
                             }
                             .padding(.horizontal, 20)

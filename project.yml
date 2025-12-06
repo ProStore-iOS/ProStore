@@ -30,8 +30,8 @@ targets:
       properties:
         CFBundleDisplayName: "ProStore"
         CFBundleName: "prostore"
-        CFBundleVersion: "32"
-        CFBundleShortVersionString: "0.10.0"
+        CFBundleVersion: "33"
+        CFBundleShortVersionString: "0.10.1"
         UILaunchStoryboardName: "LaunchScreen"
         NSPrincipalClass: "UIApplication"
         NSAppTransportSecurity:

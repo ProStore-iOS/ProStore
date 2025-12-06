@@ -250,10 +250,16 @@ final class RepoViewModel: ObservableObject {
                     throw NSError(domain: "RepoFetcher", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode)"])
                 }
                 let decoder = JSONDecoder()
+
+                // Case 1: AltSource with apps property
                 if let source = try? decoder.decode(AltSource.self, from: data), let rawApps = source.apps {
                     let repoName = source.META?.repoName ?? source.name
                     let mapped = rawApps.map { raw -> AltApp in
-                        AltApp(
+                        // prefer download URL from versions (first non-nil), else fallback to top-level downloadURL
+                        let preferredDownloadString = raw.versions?.compactMap { $0.downloadURL }.first ?? raw.downloadURL
+                        let preferredDownloadURL = preferredDownloadString.flatMap { URL(string: $0) }
+
+                        return AltApp(
                             name: raw.name,
                             bundleIdentifier: raw.bundleIdentifier,
                             developerName: raw.developerName,
@@ -265,16 +271,21 @@ final class RepoViewModel: ObservableObject {
                             size: raw.size,
                             versionDate: raw.versionDate,
                             fullDate: raw.fullDate,
-                            downloadURL: raw.downloadURL.flatMap { URL(string: $0) },
+                            downloadURL: preferredDownloadURL,
                             repositoryName: repoName
                         )
                     }
                     combinedApps.append(contentsOf: mapped)
                     continue
                 }
+
+                // Case 2: top-level array of AppRaw
                 if let rawArray = try? decoder.decode([AppRaw].self, from: data) {
                     let mapped = rawArray.map { raw -> AltApp in
-                        AltApp(
+                        let preferredDownloadString = raw.versions?.compactMap { $0.downloadURL }.first ?? raw.downloadURL
+                        let preferredDownloadURL = preferredDownloadString.flatMap { URL(string: $0) }
+
+                        return AltApp(
                             name: raw.name,
                             bundleIdentifier: raw.bundleIdentifier,
                             developerName: raw.developerName,
@@ -286,19 +297,24 @@ final class RepoViewModel: ObservableObject {
                             size: raw.size,
                             versionDate: raw.versionDate,
                             fullDate: raw.fullDate,
-                            downloadURL: raw.downloadURL.flatMap { URL(string: $0) },
+                            downloadURL: preferredDownloadURL,
                             repositoryName: nil
                         )
                     }
                     combinedApps.append(contentsOf: mapped)
                     continue
                 }
+
+                // Case 3: JSON object with "apps" fragment
                 if let jsonObject = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let appsFragment = jsonObject["apps"] {
                     let fragmentData = try JSONSerialization.data(withJSONObject: appsFragment)
                     let rawArray = try decoder.decode([AppRaw].self, from: fragmentData)
                     let mapped = rawArray.map { raw -> AltApp in
-                        AltApp(
+                        let preferredDownloadString = raw.versions?.compactMap { $0.downloadURL }.first ?? raw.downloadURL
+                        let preferredDownloadURL = preferredDownloadString.flatMap { URL(string: $0) }
+
+                        return AltApp(
                             name: raw.name,
                             bundleIdentifier: raw.bundleIdentifier,
                             developerName: raw.developerName,
@@ -310,18 +326,20 @@ final class RepoViewModel: ObservableObject {
                             size: raw.size,
                             versionDate: raw.versionDate,
                             fullDate: raw.fullDate,
-                            downloadURL: raw.downloadURL.flatMap { URL(string: $0) },
+                            downloadURL: preferredDownloadURL,
                             repositoryName: nil
                         )
                     }
                     combinedApps.append(contentsOf: mapped)
                     continue
                 }
+
                 throw NSError(domain: "RepoFetcher", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unexpected JSON format."])
             } catch {
                 errors.append("Failed \(url): \(error.localizedDescription)")
             }
         }
+
         // dedupe by bundleIdentifier (keep first occurrence)
         var seen: Set<String> = []
         let deduped = combinedApps.filter { app in
