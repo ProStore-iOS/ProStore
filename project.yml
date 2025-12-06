@@ -17,7 +17,7 @@ packages:
     url: https://github.com/krzyzanowskim/OpenSSL.git
     from: "3.3.3001"
   GCDWebServer:
-    url: https://github.com/swisspol/GCDWebServer.git
+    url: https://github.com/yene/GCDWebServer.git
     branch: master
 
 targets:
@@ -57,4 +57,5 @@ targets:
       - package: OpenSSL
         product: OpenSSL
       - package: GCDWebServer
+
         product: GCDWebServer
