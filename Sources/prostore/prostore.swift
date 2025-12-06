@@ -62,7 +62,7 @@ struct MainSidebarView: View {
                         .navigationTitle("About")
                         .navigationBarTitleDisplayMode(.large)
                 }
-            case .about:
+            case .test:
                 NavigationStack {
                     CertTestView()
                         .navigationTitle("Test Install")
