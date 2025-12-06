@@ -397,47 +397,41 @@ public func installApp(from ipaURL: URL) throws {
         }
     }
 
-    // 6) Start local server. If PKCS#12 exists at Documents/SSL/localhost.p12, try to use it for TLS.
-    let sslDir = documents.appendingPathComponent("SSL", isDirectory: true)
-    var tlsIdentity: sec_identity_t? = nil
-    var tlsEnabled = false
-    let p12URL = sslDir.appendingPathComponent("localhost.p12")
+// 6) Start local server. If PKCS#12 exists at Documents/SSL/localhost.p12, try to use it for TLS.
+let sslDir = documents.appendingPathComponent("SSL", isDirectory: true)
+var tlsIdentity: sec_identity_t? = nil
+var tlsEnabled = false
+let p12URL = sslDir.appendingPathComponent("localhost.p12")
 
-    if fm.fileExists(atPath: p12URL.path) {
-        if let pData = try? Data(contentsOf: p12URL) {
-            // PKCS#12 has no password; pass empty string
-            let options: CFDictionary = [kSecImportExportPassphrase as String: ""] as CFDictionary
-            var items: CFArray? = nil
-            let status = SecPKCS12Import(pData as CFData, options, &items)
-            if status == errSecSuccess,
-               let arr = items as? [[String: Any]],
-               let first = arr.first,
-                if let identityRef = first[kSecImportItemIdentity as String] as? SecIdentity {
-                    // use identityRef as before
-                    if let secId = sec_identity_create(identityRef) {
-                        tlsIdentity = secId
-                        tlsEnabled = true
-                    } else {
-                        print("sec_identity_create failed; falling back to HTTP")
-                    }
-                } else {
-                    print("Could not extract SecIdentity from PKCS12; falling back to HTTP")
-                }
-            {
-                // convert to sec_identity_t for sec_protocol_options_set_local_identity()
-                // sec_identity_create is available on modern Apple SDKs — returns sec_identity_t?
-                if let secId = sec_identity_create(identityRef) {
-                    tlsIdentity = secId
-                    tlsEnabled = true
-                    // NOTE: Do NOT free sec_identity_t here; leave it for the listener while running.
-                } else {
-                    print("sec_identity_create failed; falling back to HTTP")
-                }
+if fm.fileExists(atPath: p12URL.path) {
+    if let pData = try? Data(contentsOf: p12URL) {
+        // PKCS#12 has no password; pass empty string
+        let options: CFDictionary = [kSecImportExportPassphrase as String: ""] as CFDictionary
+        var items: CFArray? = nil
+        let status = SecPKCS12Import(pData as CFData, options, &items)
+        
+        if status == errSecSuccess,
+           let arr = items as? [[String: Any]],
+           let first = arr.first,
+           let identityRef = first[kSecImportItemIdentity as String] as? SecIdentity {
+            
+            // convert to sec_identity_t for sec_protocol_options_set_local_identity()
+            if let secId = sec_identity_create(identityRef) {
+                tlsIdentity = secId
+                tlsEnabled = true
             } else {
-                print("PKCS12 import failed (status \(status)). Will start HTTP only.")
+                print("sec_identity_create failed; falling back to HTTP")
             }
+            
+        } else {
+            print("Could not import PKCS#12 or extract SecIdentity (status \(status)). Will start HTTP only.")
         }
+    } else {
+        print("Failed to read PKCS#12 file; starting HTTP only.")
     }
+} else {
+    print("No PKCS#12 found at \(p12URL.path); starting HTTP only.")
+}
 
     // Now we can write files and start server with chosen protocol (https if tlsEnabled)
     // We'll pick port 7404 by default.
