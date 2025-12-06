@@ -412,7 +412,17 @@ public func installApp(from ipaURL: URL) throws {
             if status == errSecSuccess,
                let arr = items as? [[String: Any]],
                let first = arr.first,
-               let identityRef = first[kSecImportItemIdentity as String] as! SecIdentity
+                if let identityRef = first[kSecImportItemIdentity as String] as? SecIdentity {
+                    // use identityRef as before
+                    if let secId = sec_identity_create(identityRef) {
+                        tlsIdentity = secId
+                        tlsEnabled = true
+                    } else {
+                        print("sec_identity_create failed; falling back to HTTP")
+                    }
+                } else {
+                    print("Could not extract SecIdentity from PKCS12; falling back to HTTP")
+                }
             {
                 // convert to sec_identity_t for sec_protocol_options_set_local_identity()
                 // sec_identity_create is available on modern Apple SDKs — returns sec_identity_t?
