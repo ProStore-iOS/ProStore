@@ -76,7 +76,7 @@ fileprivate class SigningManager {
                     // Convert 0.0-1.0 progress to 0.25-0.5 range
                     let overallProgress = 0.25 + (progress * 0.25)
                     let pct = Int(progress * 100)
-                    progressUpdate("Unzipping IPA 🔓 (\(pct)%)", overallProgress)
+                    progressUpdate("Unzipping IPA 🔓", overallProgress)
                 })
                 let payloadDir = workDir.appendingPathComponent("Payload")
                 let appDir = try findAppBundle(in: payloadDir)
@@ -111,7 +111,7 @@ fileprivate class SigningManager {
                         // Convert 0.0-1.0 progress to 0.75-1.0 range
                         let overallProgress = 0.75 + (progress * 0.25)
                         let pct = Int(progress * 100)
-                        progressUpdate("Zipping signed IPA 📦 (\(pct)%)", overallProgress)
+                        progressUpdate("Zipping signed IPA 📦", overallProgress)
                     }
                 )
                 completion(.success(signedIPAURL))
