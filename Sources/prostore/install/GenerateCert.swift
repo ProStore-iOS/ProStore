@@ -328,24 +328,21 @@ public final class GenerateCert {
     private static func writePKCS12(pkey: OpaquePointer?, cert: OpaquePointer?, caCert: OpaquePointer?, to path: String, password: String?) throws {
         guard let pkey = pkey, let cert = cert else { throw CertGenError.writeFailed("pkey or cert nil") }
         
-        let pass = password?.cString(using: .utf8)?.map { UnsafePointer<CChar>($0) } ?? nil
+        let pass: UnsafePointer<CChar>? = password?.utf8CString.withUnsafeBufferPointer { $0.baseAddress } ?? nil
         let friendlyName = "localhost"
-        let name = friendlyName.withCString { UnsafePointer<CChar>($0) }
+        let name: UnsafePointer<CChar>? = friendlyName.utf8CString.withUnsafeBufferPointer { $0.baseAddress }
         
         var caStack: OpaquePointer? = nil
         if let caCert = caCert {
-            caStack = sk_X509_new_null()
+            caStack = OPENSSL_sk_new_null()
             if let caStack = caStack {
-                sk_X509_push(caStack, caCert)
+                _ = OPENSSL_sk_push(caStack, UnsafeMutableRawPointer(caCert))
             }
         }
         
         defer {
             if let caStack = caStack {
-                let freeFunc: @convention(c) (OpaquePointer?) -> Void = { ptr in
-                    X509_free(ptr)
-                }
-                sk_X509_pop_free(caStack, freeFunc)
+                OPENSSL_sk_free(caStack)
             }
         }
         
@@ -361,4 +358,3 @@ public final class GenerateCert {
             throw CertGenError.writeFailed("i2d_PKCS12_bio failed for \(path)")
         }
     }
-}

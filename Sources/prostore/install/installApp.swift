@@ -113,7 +113,8 @@ final class LocalStaticHTTPServer {
                     received.append(data)
                     // If header end reached
                     if let range = received.range(of: Data("\r\n\r\n".utf8)) {
-                        self.processHTTPRequest(connection: connection, headerData: received.subdata(in: 0...range.upperBound-1))
+                        // fixed: use half-open Range 0..<range.upperBound
+                        self.processHTTPRequest(connection: connection, headerData: received.subdata(in: 0..<range.upperBound))
                         return
                     }
                 }
@@ -179,8 +180,8 @@ final class LocalStaticHTTPServer {
             headers += "Content-Type: \(mime)\r\n"
             headers += "Connection: close\r\n"
             headers += "\r\n"
-            let headerData = Data(headers.utf8)
-            connection.send(content: headerData, completion: .contentProcessed({ _ in
+            let headerDataToSend = Data(headers.utf8)
+            connection.send(content: headerDataToSend, completion: .contentProcessed({ _ in
                 connection.send(content: data, completion: .contentProcessed({ _ in
                     // done
                 }))
@@ -192,8 +193,13 @@ final class LocalStaticHTTPServer {
 
     private func sendSimpleResponse(connection: NWConnection, status: Int, text: String) {
         let body = text + "\n"
-        let headers = "HTTP/1.1 \(status) \(httpStatusText(status))\r\nContent-Length: \(body.utf8.count)\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n"
-        connection.send(content: Data(headers.utf8 + body.utf8), completion: .contentProcessed({ _ in }))
+        // fixed: build Data from full string rather than trying to add UTF8View slices
+        let combined = Data(( "HTTP/1.1 \(status) \(httpStatusText(status))\r\n" +
+                              "Content-Length: \(body.utf8.count)\r\n" +
+                              "Content-Type: text/plain\r\n" +
+                              "Connection: close\r\n\r\n" +
+                              body ).utf8)
+        connection.send(content: combined, completion: .contentProcessed({ _ in }))
     }
 
     private func httpStatusText(_ code: Int) -> String {
@@ -264,7 +270,7 @@ public func installApp(from ipaURL: URL) throws {
     }
 
     // Get required fields
-    let bundleIdentifier = (info["CFBundleIdentifier"] as? String) ?? (info["CFBundleIdentifier"] as? String) ?? ""
+    let bundleIdentifier = (info["CFBundleIdentifier"] as? String) ?? ""
     let version = (info["CFBundleShortVersionString"] as? String) ?? (info["CFBundleVersion"] as? String) ?? "1.0"
     let title = (info["CFBundleDisplayName"] as? String) ?? (info["CFBundleName"] as? String) ?? ipaURL.deletingPathExtension().lastPathComponent
 
@@ -287,10 +293,10 @@ public func installApp(from ipaURL: URL) throws {
                 ]
                 for name in namesToTry {
                     // search recursively in app dir
-                    if let found = try? fm.subpathsOfDirectory(atPath: appDir.path).first(where: { ($0 as NSString).lastPathComponent == name }) {
-                        if let url = URL(string: "file://" + appDir.appendingPathComponent(found).path) {
-                            return url
-                        }
+                    if let found = (try? fm.subpathsOfDirectory(atPath: appDir.path))?.first(where: { ($0 as NSString).lastPathComponent == name }) {
+                        // build file URL
+                        let fileURL = URL(fileURLWithPath: appDir.path).appendingPathComponent(found)
+                        return fileURL
                     }
                 }
             }
@@ -299,13 +305,13 @@ public func installApp(from ipaURL: URL) throws {
         // fallback: try iTunesArtwork / AppIcon60x60@2x.png heuristics
         let candidates = try? fm.subpathsOfDirectory(atPath: appDir.path)
         let pngs = candidates?.filter { $0.lowercased().hasSuffix(".png") } ?? []
-        // prefer files whose name contains "icon" or "appicon" or "iTunesArtwork"
+        // prefer files whose name contains "icon" or "appicon" or "itunesartwork"
         if let iconPath = pngs.first(where: { $0.lowercased().contains("icon") || $0.lowercased().contains("itunesartwork") || $0.lowercased().contains("appicon") }) {
-            return URL(fileURLWithPath: appDir.appendingPathComponent(iconPath).path)
+            return URL(fileURLWithPath: appDir.path).appendingPathComponent(iconPath)
         }
         // fallback to any png (small chance)
         if let any = pngs.first {
-            return URL(fileURLWithPath: appDir.appendingPathComponent(any).path)
+            return URL(fileURLWithPath: appDir.path).appendingPathComponent(any)
         }
         return nil
     }
@@ -391,10 +397,6 @@ public func installApp(from ipaURL: URL) throws {
         }
     }
 
-    // We'll construct URLs for manifest/ipa/icon using server base path (we don't know port yet).
-    // Write manifest later once we have port/https or http scheme.
-    // For now just prepare the strings to be replaced.
-
     // 6) Start local server. If PKCS#12 exists at Documents/SSL/localhost.p12, try to use it for TLS.
     let sslDir = documents.appendingPathComponent("SSL", isDirectory: true)
     var tlsIdentity: sec_identity_t? = nil
@@ -412,11 +414,14 @@ public func installApp(from ipaURL: URL) throws {
                let first = arr.first,
                let identityRef = first[kSecImportItemIdentity as String] as? SecIdentity
             {
-                // convert to sec_identity_t for sec_protocol_options_set_local_identity
+                // convert to sec_identity_t for sec_protocol_options_set_local_identity()
+                // sec_identity_create is available on modern Apple SDKs — returns sec_identity_t?
                 if let secId = sec_identity_create(identityRef) {
                     tlsIdentity = secId
                     tlsEnabled = true
                     // NOTE: Do NOT free sec_identity_t here; leave it for the listener while running.
+                } else {
+                    print("sec_identity_create failed; falling back to HTTP")
                 }
             } else {
                 print("PKCS12 import failed (status \(status)). Will start HTTP only.")
