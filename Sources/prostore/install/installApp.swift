@@ -411,18 +411,18 @@ if fm.fileExists(atPath: p12URL.path) {
         let status = SecPKCS12Import(pData as CFData, options, &items)
         
         if status == errSecSuccess,
-           let arr = items as? [[String: Any]],
-           let first = arr.first,
-           let identityRef = first[kSecImportItemIdentity as String] as? SecIdentity {
-            
-            // convert to sec_identity_t for sec_protocol_options_set_local_identity()
+        let arr = items as? [[String: Any]],
+        let first = arr.first {
+    
+            let identityRef = first[kSecImportItemIdentity as String] as SecIdentity
+    
             if let secId = sec_identity_create(identityRef) {
                 tlsIdentity = secId
                 tlsEnabled = true
             } else {
                 print("sec_identity_create failed; falling back to HTTP")
             }
-            
+    
         } else {
             print("Could not import PKCS#12 or extract SecIdentity (status \(status)). Will start HTTP only.")
         }
