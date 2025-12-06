@@ -8,72 +8,28 @@ enum CertGenError: Error {
     case sanCreationFailed(String)
 }
 
-final class Logger {
-    static let shared = Logger()
-    private let logFile: URL
-    private let queue = DispatchQueue(label: "LoggerQueue")
-    
-    private init() {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        logFile = docs.appendingPathComponent("log.txt")
-        try? "".write(to: logFile, atomically: true, encoding: .utf8)
-    }
-    
-    func log(_ message: String) {
-        let timestamp = ISO8601DateFormatter().string(from: Date())
-        let fullMsg = "[\(timestamp)] \(message)\n"
-        print(fullMsg, terminator: "")
-        queue.async {
-            if let data = fullMsg.data(using: .utf8) {
-                if FileManager.default.fileExists(atPath: self.logFile.path) {
-                    if let handle = try? FileHandle(forWritingTo: self.logFile) {
-                        handle.seekToEndOfFile()
-                        handle.write(data)
-                        handle.closeFile()
-                    }
-                } else {
-                    try? data.write(to: self.logFile)
-                }
-            }
-        }
-    }
-    
-    func logError(_ error: Error) {
-        log("ERROR: \(error)")
-    }
-}
-
 public final class GenerateCert {
     
     public static func createAndSaveCerts(caCN: String = "ProStore",
                                           serverCN: String = "127.0.0.1",
                                           rsaBits: Int32 = 2048,
                                           daysValid: Int32 = 36500) async throws -> [URL] {
-        Logger.shared.log("Initializing OpenSSL...")
         
         // Proper initialization for OpenSSL 3.x
         OPENSSL_init_ssl(UInt64(OPENSSL_INIT_LOAD_SSL_STRINGS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS), nil)
         OPENSSL_init_crypto(UInt64(OPENSSL_INIT_LOAD_CONFIG | OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS), nil)
         
-        Logger.shared.log("Generating CA key...")
         guard let caPkey = try generateRSAKey(bits: rsaBits) else { throw CertGenError.keyGenerationFailed("CA key generation failed") }
-        Logger.shared.log("CA key generated.")
         
-        Logger.shared.log("Creating self-signed CA certificate...")
         guard let caX509 = try createSelfSignedCertificate(pkey: caPkey, commonName: caCN, days: daysValid, isCA: true) else {
             throw CertGenError.x509CreationFailed("CA certificate creation failed")
         }
-        Logger.shared.log("CA certificate created.")
         
-        Logger.shared.log("Generating server key...")
         guard let serverPkey = try generateRSAKey(bits: rsaBits) else { throw CertGenError.keyGenerationFailed("Server key generation failed") }
-        Logger.shared.log("Server key generated.")
         
-        Logger.shared.log("Creating server certificate signed by CA...")
         guard let serverX509 = try createCertificateSignedByCA(serverPKey: serverPkey, caPkey: caPkey, caX509: caX509, commonName: serverCN, days: daysValid) else {
             throw CertGenError.x509CreationFailed("Server certificate creation failed")
         }
-        Logger.shared.log("Server certificate created.")
         
         let docs = try documentsDirectory()
         let certDir = docs.appendingPathComponent("SSL", isDirectory: true)
@@ -86,19 +42,12 @@ public final class GenerateCert {
         let serverKeyURL  = certDir.appendingPathComponent("localhost.key.pem")
         let serverCertURL = certDir.appendingPathComponent("localhost.crt.pem")
         
-        Logger.shared.log("Writing CA key to \(rootKeyURL.path)")
         try writePrivateKeyPEM(pkey: caPkey, to: rootKeyURL.path)
-        Logger.shared.log("Writing CA cert to \(rootCertURL.path)")
         try writeX509PEM(x509: caX509, to: rootCertURL.path)
-        Logger.shared.log("Writing final CA cert to \(finalCertURL.path)")
         try writeX509PEM(x509: caX509, to: finalCertURL.path)
         
-        Logger.shared.log("Writing server key to \(serverKeyURL.path)")
         try writePrivateKeyPEM(pkey: serverPkey, to: serverKeyURL.path)
-        Logger.shared.log("Writing server cert to \(serverCertURL.path)")
         try writeX509PEM(x509: serverX509, to: serverCertURL.path)
-        
-        Logger.shared.log("Certificate generation completed successfully.")
         
         EVP_PKEY_free(caPkey)
         X509_free(caX509)
@@ -301,9 +250,11 @@ public final class GenerateCert {
             }
         }
         
-        // Use the simpler method for SAN
-        do { try addSubjectAltName_IP_simple(cert: cert, ipString: "127.0.0.1") } catch {
-            Logger.shared.log("Warning: SAN add failed: \(error)")
+        // Try to add SAN, but ignore failure (no logging)
+        do {
+            try addSubjectAltName_IP_simple(cert: cert, ipString: "127.0.0.1")
+        } catch {
+            // intentionally ignored
         }
         
         if let ext_bc = X509V3_EXT_conf_nid(nil, nil, NID_basic_constraints, "CA:FALSE") {
