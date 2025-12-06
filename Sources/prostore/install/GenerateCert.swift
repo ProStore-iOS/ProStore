@@ -1,4 +1,3 @@
-// GenerateCert.swift
 import Foundation
 import OpenSSL
 
@@ -52,13 +51,9 @@ public final class GenerateCert {
                                           daysValid: Int32 = 36500) async throws -> [URL] {
         Logger.shared.log("Initializing OpenSSL...")
         
-        // Remove deprecated calls
-        // _ = OpenSSL_add_all_algorithms() // Deprecated in OpenSSL 3.x
-        // ERR_load_crypto_strings() // Deprecated in OpenSSL 3.x
-        
-        // For OpenSSL 3.x, use explicit initialization
-        OPENSSL_init_ssl(OPENSSL_INIT_LOAD_SSL_STRINGS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, nil)
-        OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG | OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS, nil)
+        // Proper initialization for OpenSSL 3.x
+        OPENSSL_init_ssl(UInt64(OPENSSL_INIT_LOAD_SSL_STRINGS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS), nil)
+        OPENSSL_init_crypto(UInt64(OPENSSL_INIT_LOAD_CONFIG | OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS), nil)
         
         Logger.shared.log("Generating CA key...")
         guard let caPkey = try generateRSAKey(bits: rsaBits) else { throw CertGenError.keyGenerationFailed("CA key generation failed") }
@@ -116,40 +111,28 @@ public final class GenerateCert {
         return url
     }
     
-private static func generateRSAKey(bits: Int32) throws -> OpaquePointer? {
-    guard let rsa = RSA_new() else {
-        throw CertGenError.keyGenerationFailed("RSA_new failed")
+    private static func generateRSAKey(bits: Int32) throws -> OpaquePointer? {
+        // Use modern EVP API for key generation in OpenSSL 3.x
+        guard let ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, nil) else {
+            throw CertGenError.keyGenerationFailed("EVP_PKEY_CTX_new_id failed")
+        }
+        defer { EVP_PKEY_CTX_free(ctx) }
+        
+        if EVP_PKEY_keygen_init(ctx) <= 0 {
+            throw CertGenError.keyGenerationFailed("EVP_PKEY_keygen_init failed")
+        }
+        
+        if EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, Int(bits)) <= 0 {
+            throw CertGenError.keyGenerationFailed("EVP_PKEY_CTX_set_rsa_keygen_bits failed")
+        }
+        
+        var pkey: OpaquePointer? = nil
+        if EVP_PKEY_keygen(ctx, &pkey) <= 0 {
+            throw CertGenError.keyGenerationFailed("EVP_PKEY_keygen failed")
+        }
+        
+        return pkey
     }
-    defer { RSA_free(rsa) } // Automatically free RSA on any early exit
-    
-    guard let bn = BN_new() else {
-        throw CertGenError.keyGenerationFailed("BN_new failed")
-    }
-    defer { BN_free(bn) }
-    
-    if BN_set_word(bn, 65537) != 1 {
-        throw CertGenError.keyGenerationFailed("BN_set_word failed")
-    }
-    
-    if RSA_generate_key_ex(rsa, bits, bn, nil) != 1 {
-        throw CertGenError.keyGenerationFailed("RSA_generate_key_ex failed")
-    }
-    
-    guard let pkey = EVP_PKEY_new() else {
-        throw CertGenError.keyGenerationFailed("EVP_PKEY_new failed")
-    }
-    
-    // ✅ FIX: Correct pointer conversion for OpenSSL API
-    if EVP_PKEY_assign(pkey, EVP_PKEY_RSA, UnsafeMutableRawPointer(rsa)) != 1 {
-        EVP_PKEY_free(pkey)
-        throw CertGenError.keyGenerationFailed("EVP_PKEY_assign failed")
-    }
-    
-    // ✅ IMPORTANT: Prevent RSA from being freed by the defer block,
-    // as EVP_PKEY_assign now takes ownership.
-    _ = Unmanaged.passRetained(rsa) // Transfer ownership
-    return pkey
-}
 
     private static func createSelfSignedCertificate(pkey: OpaquePointer?,
                                                     commonName: String,
@@ -157,23 +140,51 @@ private static func generateRSAKey(bits: Int32) throws -> OpaquePointer? {
                                                     isCA: Bool) throws -> OpaquePointer? {
         guard let x509 = X509_new() else { throw CertGenError.x509CreationFailed("X509_new failed") }
         
-        defer {
-            if let x509 = x509 {
-                // Only free if error occurs
-            }
-        }
-        
         X509_set_version(x509, 2)
         
-        if let serial = ASN1_INTEGER_new() {
-            ASN1_INTEGER_set(serial, 1)
-            X509_set_serialNumber(x509, serial)
-            ASN1_INTEGER_free(serial)
+        guard let serial = ASN1_INTEGER_new() else {
+            X509_free(x509)
+            throw CertGenError.x509CreationFailed("ASN1_INTEGER_new failed")
+        }
+        defer { ASN1_INTEGER_free(serial) }
+        
+        if ASN1_INTEGER_set_int64(serial, 1) != 1 {
+            X509_free(x509)
+            throw CertGenError.x509CreationFailed("ASN1_INTEGER_set_int64 failed")
         }
         
-        X509_gmtime_adj(X509_get_notBefore(x509), 0)
-        X509_gmtime_adj(X509_get_notAfter(x509), Int64(days) * 24 * 3600)
-        X509_set_pubkey(x509, pkey)
+        if X509_set_serialNumber(x509, serial) != 1 {
+            X509_free(x509)
+            throw CertGenError.x509CreationFailed("X509_set_serialNumber failed")
+        }
+        
+        // Set notBefore and notAfter using ASN1_TIME_set
+        let currentTime = Int(time(nil))
+        
+        guard let notBefore = ASN1_TIME_set(nil, time_t(currentTime)) else {
+            X509_free(x509)
+            throw CertGenError.x509CreationFailed("ASN1_TIME_set for notBefore failed")
+        }
+        defer { ASN1_TIME_free(notBefore) }
+        if X509_set1_notBefore(x509, notBefore) != 1 {
+            X509_free(x509)
+            throw CertGenError.x509CreationFailed("X509_set1_notBefore failed")
+        }
+        
+        guard let notAfter = ASN1_TIME_set(nil, time_t(currentTime + Int(days) * 86400)) else {
+            X509_free(x509)
+            throw CertGenError.x509CreationFailed("ASN1_TIME_set for notAfter failed")
+        }
+        defer { ASN1_TIME_free(notAfter) }
+        if X509_set1_notAfter(x509, notAfter) != 1 {
+            X509_free(x509)
+            throw CertGenError.x509CreationFailed("X509_set1_notAfter failed")
+        }
+        
+        if X509_set_pubkey(x509, pkey) != 1 {
+            X509_free(x509)
+            throw CertGenError.x509CreationFailed("X509_set_pubkey failed")
+        }
         
         guard let name = X509_get_subject_name(x509) else {
             X509_free(x509)
@@ -187,16 +198,25 @@ private static func generateRSAKey(bits: Int32) throws -> OpaquePointer? {
         _ = addNameEntry(name: name, field: "OU", value: "Dev")
         _ = addNameEntry(name: name, field: "CN", value: commonName)
         
-        X509_set_issuer_name(x509, name)
+        if X509_set_issuer_name(x509, name) != 1 {
+            X509_free(x509)
+            throw CertGenError.x509CreationFailed("X509_set_issuer_name failed")
+        }
         
         if isCA {
             if let ext = X509V3_EXT_conf_nid(nil, nil, NID_basic_constraints, "CA:TRUE") {
-                X509_add_ext(x509, ext, -1)
-                X509_EXTENSION_free(ext)
+                defer { X509_EXTENSION_free(ext) }
+                if X509_add_ext(x509, ext, -1) != 1 {
+                    X509_free(x509)
+                    throw CertGenError.x509CreationFailed("X509_add_ext for basic_constraints failed")
+                }
             }
             if let ext2 = X509V3_EXT_conf_nid(nil, nil, NID_key_usage, "keyCertSign,cRLSign") {
-                X509_add_ext(x509, ext2, -1)
-                X509_EXTENSION_free(ext2)
+                defer { X509_EXTENSION_free(ext2) }
+                if X509_add_ext(x509, ext2, -1) != 1 {
+                    X509_free(x509)
+                    throw CertGenError.x509CreationFailed("X509_add_ext for key_usage failed")
+                }
             }
         }
         
@@ -215,23 +235,51 @@ private static func generateRSAKey(bits: Int32) throws -> OpaquePointer? {
                                                     days: Int32) throws -> OpaquePointer? {
         guard let cert = X509_new() else { throw CertGenError.x509CreationFailed("X509_new failed") }
         
-        defer {
-            if let cert = cert {
-                // Only free if error occurs
-            }
-        }
-        
         X509_set_version(cert, 2)
         
-        if let serial = ASN1_INTEGER_new() {
-            ASN1_INTEGER_set(serial, Int(time(nil) & 0xffffffff))
-            X509_set_serialNumber(cert, serial)
-            ASN1_INTEGER_free(serial)
+        guard let serial = ASN1_INTEGER_new() else {
+            X509_free(cert)
+            throw CertGenError.x509CreationFailed("ASN1_INTEGER_new failed")
+        }
+        defer { ASN1_INTEGER_free(serial) }
+        
+        if ASN1_INTEGER_set_int64(serial, Int64(time(nil) & 0xffffffff)) != 1 {
+            X509_free(cert)
+            throw CertGenError.x509CreationFailed("ASN1_INTEGER_set_int64 failed")
         }
         
-        X509_gmtime_adj(X509_get_notBefore(cert), 0)
-        X509_gmtime_adj(X509_get_notAfter(cert), Int64(days) * 24 * 3600)
-        X509_set_pubkey(cert, serverPKey)
+        if X509_set_serialNumber(cert, serial) != 1 {
+            X509_free(cert)
+            throw CertGenError.x509CreationFailed("X509_set_serialNumber failed")
+        }
+        
+        // Set notBefore and notAfter using ASN1_TIME_set
+        let currentTime = Int(time(nil))
+        
+        guard let notBefore = ASN1_TIME_set(nil, time_t(currentTime)) else {
+            X509_free(cert)
+            throw CertGenError.x509CreationFailed("ASN1_TIME_set for notBefore failed")
+        }
+        defer { ASN1_TIME_free(notBefore) }
+        if X509_set1_notBefore(cert, notBefore) != 1 {
+            X509_free(cert)
+            throw CertGenError.x509CreationFailed("X509_set1_notBefore failed")
+        }
+        
+        guard let notAfter = ASN1_TIME_set(nil, time_t(currentTime + Int(days) * 86400)) else {
+            X509_free(cert)
+            throw CertGenError.x509CreationFailed("ASN1_TIME_set for notAfter failed")
+        }
+        defer { ASN1_TIME_free(notAfter) }
+        if X509_set1_notAfter(cert, notAfter) != 1 {
+            X509_free(cert)
+            throw CertGenError.x509CreationFailed("X509_set1_notAfter failed")
+        }
+        
+        if X509_set_pubkey(cert, serverPKey) != 1 {
+            X509_free(cert)
+            throw CertGenError.x509CreationFailed("X509_set_pubkey failed")
+        }
         
         guard let subj = X509_get_subject_name(cert) else {
             X509_free(cert)
@@ -247,7 +295,10 @@ private static func generateRSAKey(bits: Int32) throws -> OpaquePointer? {
         
         if let ca = caX509 {
             if let caSubject = X509_get_subject_name(ca) {
-                X509_set_issuer_name(cert, caSubject)
+                if X509_set_issuer_name(cert, caSubject) != 1 {
+                    X509_free(cert)
+                    throw CertGenError.x509CreationFailed("X509_set_issuer_name failed")
+                }
             }
         }
         
@@ -257,13 +308,19 @@ private static func generateRSAKey(bits: Int32) throws -> OpaquePointer? {
         }
         
         if let ext_bc = X509V3_EXT_conf_nid(nil, nil, NID_basic_constraints, "CA:FALSE") {
-            X509_add_ext(cert, ext_bc, -1)
-            X509_EXTENSION_free(ext_bc)
+            defer { X509_EXTENSION_free(ext_bc) }
+            if X509_add_ext(cert, ext_bc, -1) != 1 {
+                X509_free(cert)
+                throw CertGenError.x509CreationFailed("X509_add_ext for basic_constraints failed")
+            }
         }
         
         if let ext_ku = X509V3_EXT_conf_nid(nil, nil, NID_key_usage, "digitalSignature,keyEncipherment") {
-            X509_add_ext(cert, ext_ku, -1)
-            X509_EXTENSION_free(ext_ku)
+            defer { X509_EXTENSION_free(ext_ku) }
+            if X509_add_ext(cert, ext_ku, -1) != 1 {
+                X509_free(cert)
+                throw CertGenError.x509CreationFailed("X509_add_ext for key_usage failed")
+            }
         }
         
         guard let caKey = caPkey else {
