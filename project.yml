@@ -13,6 +13,9 @@ packages:
   ZIPFoundation:
     url: https://github.com/weichsel/ZIPFoundation.git
     branch: main
+  OpenSSL:
+    url: https://github.com/krzyzanowskim/OpenSSL.git
+    from: "3.3.3001"
 
 targets:
   prostore:
@@ -48,3 +51,5 @@ targets:
         product: ZsignSwift
       - package: ZIPFoundation
         product: ZIPFoundation
+      - package: OpenSSL
+        product: OpenSSL

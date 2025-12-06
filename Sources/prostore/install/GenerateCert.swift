@@ -116,37 +116,40 @@ public final class GenerateCert {
         return url
     }
     
-    private static func generateRSAKey(bits: Int32) throws -> OpaquePointer? {
-        guard let rsa = RSA_new() else { throw CertGenError.keyGenerationFailed("RSA_new failed") }
-        guard let bn = BN_new() else { RSA_free(rsa); throw CertGenError.keyGenerationFailed("BN_new failed") }
-        
-        defer { BN_free(bn) }
-        
-        if BN_set_word(bn, UInt(65537)) != 1 {
-            RSA_free(rsa)
-            throw CertGenError.keyGenerationFailed("BN_set_word failed")
-        }
-        
-        if RSA_generate_key_ex(rsa, bits, bn, nil) != 1 {
-            RSA_free(rsa)
-            throw CertGenError.keyGenerationFailed("RSA_generate_key_ex failed")
-        }
-        
-        guard let pkey = EVP_PKEY_new() else {
-            RSA_free(rsa)
-            throw CertGenError.keyGenerationFailed("EVP_PKEY_new failed")
-        }
-        
-        // Use EVP_PKEY_assign_RSA for OpenSSL 1.x compatibility
-        // For OpenSSL 3.x, this should still work with the right headers
-        if EVP_PKEY_assign(pkey, EVP_PKEY_RSA, rsa) != 1 {
-            EVP_PKEY_free(pkey)
-            RSA_free(rsa)
-            throw CertGenError.keyGenerationFailed("EVP_PKEY_assign failed")
-        }
-        
-        return pkey
+private static func generateRSAKey(bits: Int32) throws -> OpaquePointer? {
+    guard let rsa = RSA_new() else {
+        throw CertGenError.keyGenerationFailed("RSA_new failed")
     }
+    defer { RSA_free(rsa) } // Automatically free RSA on any early exit
+    
+    guard let bn = BN_new() else {
+        throw CertGenError.keyGenerationFailed("BN_new failed")
+    }
+    defer { BN_free(bn) }
+    
+    if BN_set_word(bn, 65537) != 1 {
+        throw CertGenError.keyGenerationFailed("BN_set_word failed")
+    }
+    
+    if RSA_generate_key_ex(rsa, bits, bn, nil) != 1 {
+        throw CertGenError.keyGenerationFailed("RSA_generate_key_ex failed")
+    }
+    
+    guard let pkey = EVP_PKEY_new() else {
+        throw CertGenError.keyGenerationFailed("EVP_PKEY_new failed")
+    }
+    
+    // ✅ FIX: Correct pointer conversion for OpenSSL API
+    if EVP_PKEY_assign(pkey, EVP_PKEY_RSA, UnsafeMutableRawPointer(rsa)) != 1 {
+        EVP_PKEY_free(pkey)
+        throw CertGenError.keyGenerationFailed("EVP_PKEY_assign failed")
+    }
+    
+    // ✅ IMPORTANT: Prevent RSA from being freed by the defer block,
+    // as EVP_PKEY_assign now takes ownership.
+    _ = Unmanaged.passRetained(rsa) // Transfer ownership
+    return pkey
+}
 
     private static func createSelfSignedCertificate(pkey: OpaquePointer?,
                                                     commonName: String,
