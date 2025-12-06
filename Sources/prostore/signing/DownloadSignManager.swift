@@ -166,8 +166,6 @@ private func signIPA(ipaURL: URL, p12URL: URL, provURL: URL, password: String, a
         p12Password: password,
         progressUpdate: { [weak self] status, progress in
             DispatchQueue.main.async {
-                // progress is already in the range 0.0-1.0 for the signing phase
-                // We need to map it to 0.5-1.0 overall
                 let overallProgress = 0.5 + (progress * 0.5)
                 self?.progress = overallProgress
                 let percent = Int(overallProgress * 100)
@@ -179,10 +177,15 @@ private func signIPA(ipaURL: URL, p12URL: URL, provURL: URL, password: String, a
                 switch result {
                 case .success(let signedIPAURL):
                     self?.progress = 1.0
-                    self?.status = "✅ Successfully signed! Saved to: \(signedIPAURL.lastPathComponent)"
+                    self?.status = "✅ Successfully signed!"
                     self?.showSuccess = true
                     
-                    // Hide progress bar after 3 seconds
+                    do {
+                        try installApp(from: signedIPAURL)
+                    } catch {
+                        self?.status = "❌ Install failed: \(error.localizedDescription)"
+                    }
+
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                         self?.isProcessing = false
                         self?.showSuccess = false
@@ -196,8 +199,6 @@ private func signIPA(ipaURL: URL, p12URL: URL, provURL: URL, password: String, a
                 case .failure(let error):
                     self?.status = "❌ Signing failed: \(error.localizedDescription)"
                     self?.isProcessing = false
-                    
-                    // Clean up temp files
                     try? FileManager.default.removeItem(at: ipaURL)
                 }
             }

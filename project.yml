@@ -36,8 +36,8 @@ targets:
       properties:
         CFBundleDisplayName: "ProStore"
         CFBundleName: "prostore"
-        CFBundleVersion: "38"
-        CFBundleShortVersionString: "0.11.0d5"
+        CFBundleVersion: "39"
+        CFBundleShortVersionString: "0.11.0d6"
         UILaunchStoryboardName: "LaunchScreen"
         NSPrincipalClass: "UIApplication"
         NSAppTransportSecurity:
@@ -57,5 +57,4 @@ targets:
       - package: OpenSSL
         product: OpenSSL
       - package: GCDWebServer
-
         product: GCDWebServer
