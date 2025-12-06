@@ -400,21 +400,18 @@ public func installApp(from ipaURL: URL) throws {
     var tlsIdentity: sec_identity_t? = nil
     var tlsEnabled = false
     let p12URL = sslDir.appendingPathComponent("localhost.p12")
-    let p12PasswordURL = sslDir.appendingPathComponent("p12_password.txt")
 
     if fm.fileExists(atPath: p12URL.path) {
-        // try to read password (if provided)
-        var p12Pass: String? = nil
-        if fm.fileExists(atPath: p12PasswordURL.path) {
-            p12Pass = try? String(contentsOf: p12PasswordURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
         if let pData = try? Data(contentsOf: p12URL) {
-            let options: CFDictionary = [kSecImportExportPassphrase as String: p12Pass ?? ""] as CFDictionary
+            // PKCS#12 has no password; pass empty string
+            let options: CFDictionary = [kSecImportExportPassphrase as String: ""] as CFDictionary
             var items: CFArray? = nil
             let status = SecPKCS12Import(pData as CFData, options, &items)
-            if status == errSecSuccess, let arr = items as? [[String: Any]], let first = arr.first,
-               let identityRef = first[kSecImportItemIdentity as String] as? SecIdentity {
+            if status == errSecSuccess,
+               let arr = items as? [[String: Any]],
+               let first = arr.first,
+               let identityRef = first[kSecImportItemIdentity as String] as? SecIdentity
+            {
                 // convert to sec_identity_t for sec_protocol_options_set_local_identity
                 if let secId = sec_identity_create(identityRef) {
                     tlsIdentity = secId
@@ -422,7 +419,7 @@ public func installApp(from ipaURL: URL) throws {
                     // NOTE: Do NOT free sec_identity_t here; leave it for the listener while running.
                 }
             } else {
-                print("PKCS12 import failed or password incorrect (status \(status)). Will start HTTP only.")
+                print("PKCS12 import failed (status \(status)). Will start HTTP only.")
             }
         }
     }
