@@ -95,14 +95,10 @@ struct SetupView: View {
         SetupPage(title: "Welcome to ProStore!",
                   subtitle: "Before you begin, follow these steps to make sure ProStore works perfectly.",
                   imageName: "star.fill"),
-
+        
         SetupPage(title: "Install the SSL Certificate",
-                  subtitle: "When the popup appears on the next page, click the 'Close' button.",
+                  subtitle: "ProStore will now generate the SSL certificate and open it for installation.\nTap the 'Generate Certificate' button, then when you get redirected, tap the 'Allow' button.\nWhen the popup appears, click the 'Close' button.",
                   imageName: "lock.shield"),
-
-        SetupPage(title: "Install the SSL Certificate",
-                  subtitle: "ProStore will now automatically generate the SSL certificate and open it for installation.",
-                  imageName: "sparkles"),
 
         SetupPage(title: "Install the SSL Certificate",
                   subtitle: "Go to Settings, tap 'Profile Downloaded', then 'Install'.\nEnter your passcode, and confirm by tapping 'Install' on the popup.",
@@ -239,3 +235,4 @@ struct SetupPage {
     let subtitle: String
     let imageName: String
 }
+
