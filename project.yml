@@ -15,6 +15,7 @@ packages:
     branch: main
   OpenSSL:
     url: https://github.com/krzyzanowskim/OpenSSL.git
+    from: "3.3.3001"
   GCDWebServer:
     url: https://github.com/swisspol/GCDWebServer.git
     branch: master
