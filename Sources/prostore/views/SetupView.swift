@@ -221,16 +221,13 @@ struct SetupView: View {
 
                 if !started {
                     showStartFailedAlert = true
-                    Logger.shared.log("Failed to start local server for certificate.")
                 } else {
                     certGenerated = true
-                    Logger.shared.log("Certificate generated and opened for installation.")
                 }
 
                 isGeneratingCert = false
             } catch {
                 isGeneratingCert = false
-                Logger.shared.logError(error)
             }
         }
     }
@@ -241,11 +238,4 @@ struct SetupPage {
     let title: String
     let subtitle: String
     let imageName: String
-}
-
-// MARK: - Logger stub
-final class Logger {
-    static let shared = Logger()
-    func log(_ msg: String) { print("[Logger] \(msg)") }
-    func logError(_ error: Error) { print("[Logger] error: \(error)") }
 }
