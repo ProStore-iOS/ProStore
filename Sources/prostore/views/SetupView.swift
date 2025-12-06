@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import GCDWebServer
 
 struct SetupView: View {
     var onComplete: () -> Void
@@ -14,7 +15,7 @@ struct SetupView: View {
                   imageName: "star.fill"),
         
         SetupPage(title: "Install the SSL Certificate",
-                  subtitle: "When the popup appears, click the 'Close' button.",
+                  subtitle: "When the popup appears on the next page, click the 'Close' button.",
                   imageName: "lock.shield"),
         
         SetupPage(title: "Install the SSL Certificate",
@@ -22,15 +23,15 @@ struct SetupView: View {
                   imageName: "sparkles"),
         
         SetupPage(title: "Install the SSL Certificate",
-                  subtitle: "Go to Settings, tap 'Profile Downloaded', then 'Install'. Enter your passcode, and confirm by tapping 'Install' on the popup.",
+                  subtitle: "Go to Settings, tap 'Profile Downloaded', then 'Install'.\nEnter your passcode, and confirm by tapping 'Install' on the popup.",
                   imageName: "checkmark.shield"),
         
         SetupPage(title: "Install the SSL Certificate",
-                  subtitle: "Tap the tick, navigate to 'General → About → Certificate Trust Settings', and enable 'ProStore' under 'Enable Full Trust for Root Certificates'.",
+                  subtitle: "Tap the tick, then navigate to\n'General → About → Certificate Trust Settings'.\nEnable 'ProStore' under 'Enable Full Trust for Root Certificates'.",
                   imageName: "hand.thumbsup"),
         
         SetupPage(title: "You're finished!",
-                  subtitle: "Thanks for completing the setup! You're now ready to use ProStore.",
+                  subtitle: "Thanks for completing the setup!\nYou're now ready to use ProStore.",
                   imageName: "party.popper")
     ]
     
@@ -118,7 +119,7 @@ struct SetupView: View {
                 
                 // Find the ProStore.pem file
                 if let proStoreCertURL = urls.first(where: { $0.lastPathComponent == "ProStore.pem" }) {
-                    openCertificateFile(url: proStoreCertURL)
+                    openCertificateUsingServer(certURL: proStoreCertURL)
                 }
                 
                 certGenerated = true
@@ -131,14 +132,26 @@ struct SetupView: View {
         }
     }
     
-    private func openCertificateFile(url: URL) {
-        DispatchQueue.main.async {
-            if UIApplication.shared.canOpenURL(url) {
-                UIApplication.shared.open(url, options: [:], completionHandler: nil)
-            } else {
-                // Fallback to UIDocumentInteractionController
-                let docController = UIDocumentInteractionController(url: url)
-                docController.presentOptionsMenu(from: CGRect.zero, in: UIApplication.shared.windows.first!.rootViewController!.view, animated: true)
+    private func openCertificateUsingServer(certURL: URL) {
+        let webServer = GCDWebServer()
+        
+        webServer.addHandler(forMethod: "GET", path: "/ProStore.crt", requestClass: GCDWebServerRequest.self) { request in
+            do {
+                let data = try Data(contentsOf: certURL)
+                let response = GCDWebServerDataResponse(data: data, contentType: "application/x-x509-ca-cert")
+                response?.setValue("attachment; filename=\"ProStore.crt\"", forAdditionalHeader: "Content-Disposition")
+                return response
+            } catch {
+                return GCDWebServerResponse(statusCode: 500)
+            }
+        }
+        
+        webServer.start(withPort: 0, bonjourName: nil)
+        
+        if let serverURL = webServer.serverURL {
+            let openURL = serverURL.appendingPathComponent("ProStore.crt")
+            DispatchQueue.main.async {
+                UIApplication.shared.open(openURL, options: [:], completionHandler: nil)
             }
         }
     }

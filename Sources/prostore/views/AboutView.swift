@@ -45,6 +45,8 @@ struct AboutView: View {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
     }
 
+    @State private var showingSetup = false
+
     var body: some View {
         NavigationStack {
             List {
@@ -88,8 +90,18 @@ struct AboutView: View {
                         CreditRow(credit: c)
                     }
                 }
+
+                Section {
+                    Button("Show Setup") {
+                        showingSetup = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
             }
             .listStyle(InsetGroupedListStyle())
+        }
+        .sheet(isPresented: $showingSetup) {
+            SetupView(onComplete: { showingSetup = false })
         }
     }
 }
@@ -138,11 +150,4 @@ struct CreditRow: View {
         }
         .padding(.vertical, 8)
     }
-}
-
-struct AboutView_Previews: PreviewProvider {
-    static var previews: some View {
-        AboutView()
-    }
-
 }
