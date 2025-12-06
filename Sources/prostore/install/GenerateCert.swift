@@ -122,7 +122,7 @@ public final class GenerateCert {
             throw CertGenError.keyGenerationFailed("EVP_PKEY_keygen_init failed")
         }
         
-        if EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, Int(bits)) <= 0 {
+        if EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, bits) <= 0 {
             throw CertGenError.keyGenerationFailed("EVP_PKEY_CTX_set_rsa_keygen_bits failed")
         }
         
