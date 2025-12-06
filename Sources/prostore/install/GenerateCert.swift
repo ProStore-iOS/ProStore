@@ -45,7 +45,7 @@ final class Logger {
 
 public final class GenerateCert {
     
-    public static func createAndSaveCerts(caCN: String = "My Local CA",
+    public static func createAndSaveCerts(caCN: String = "ProStore",
                                           serverCN: String = "127.0.0.1",
                                           rsaBits: Int32 = 2048,
                                           daysValid: Int32 = 36500) async throws -> [URL] {
@@ -76,15 +76,22 @@ public final class GenerateCert {
         Logger.shared.log("Server certificate created.")
         
         let docs = try documentsDirectory()
-        let rootCertURL = docs.appendingPathComponent("rootCA.pem")
-        let rootKeyURL = docs.appendingPathComponent("rootCA.key.pem")
-        let serverKeyURL = docs.appendingPathComponent("localhost.key.pem")
-        let serverCertURL = docs.appendingPathComponent("localhost.crt.pem")
+        let certDir = docs.appendingPathComponent("SSL", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: certDir.path) {
+            try FileManager.default.createDirectory(at: certDir, withIntermediateDirectories: true)
+        }
+        let rootCertURL   = certDir.appendingPathComponent("rootCA.pem")
+        let finalCertURL   = certDir.appendingPathComponent("ProStore.pem")
+        let rootKeyURL    = certDir.appendingPathComponent("rootCA.key.pem")
+        let serverKeyURL  = certDir.appendingPathComponent("localhost.key.pem")
+        let serverCertURL = certDir.appendingPathComponent("localhost.crt.pem")
         
         Logger.shared.log("Writing CA key to \(rootKeyURL.path)")
         try writePrivateKeyPEM(pkey: caPkey, to: rootKeyURL.path)
         Logger.shared.log("Writing CA cert to \(rootCertURL.path)")
         try writeX509PEM(x509: caX509, to: rootCertURL.path)
+        Logger.shared.log("Writing final CA cert to \(finalCertURL.path)")
+        try writeX509PEM(x509: caX509, to: finalCertURL.path)
         
         Logger.shared.log("Writing server key to \(serverKeyURL.path)")
         try writePrivateKeyPEM(pkey: serverPkey, to: serverKeyURL.path)
@@ -191,11 +198,7 @@ public final class GenerateCert {
             throw CertGenError.x509CreationFailed("X509_get_subject_name nil")
         }
         
-        _ = addNameEntry(name: name, field: "C", value: "AU")
-        _ = addNameEntry(name: name, field: "ST", value: "NSW")
-        _ = addNameEntry(name: name, field: "L", value: "Sydney")
-        _ = addNameEntry(name: name, field: "O", value: "MyCompany")
-        _ = addNameEntry(name: name, field: "OU", value: "Dev")
+        _ = addNameEntry(name: name, field: "O", value: "ProStore")
         _ = addNameEntry(name: name, field: "CN", value: commonName)
         
         if X509_set_issuer_name(x509, name) != 1 {
@@ -286,11 +289,7 @@ public final class GenerateCert {
             throw CertGenError.x509CreationFailed("X509_get_subject_name nil")
         }
         
-        _ = addNameEntry(name: subj, field: "C", value: "AU")
-        _ = addNameEntry(name: subj, field: "ST", value: "NSW")
-        _ = addNameEntry(name: subj, field: "L", value: "Sydney")
-        _ = addNameEntry(name: subj, field: "O", value: "MyCompany")
-        _ = addNameEntry(name: subj, field: "OU", value: "Dev")
+        _ = addNameEntry(name: subj, field: "O", value: "ProStore")
         _ = addNameEntry(name: subj, field: "CN", value: commonName)
         
         if let ca = caX509 {
