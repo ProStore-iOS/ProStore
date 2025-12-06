@@ -39,9 +39,10 @@ final class InstallLogger {
     }
     
     private func setupLogFile() {
+        guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        
         do {
             let fm = FileManager.default
-            let documents = try fm.urls(for: .documentDirectory, in: .userDomainMask).first!
             let logsDir = documents.appendingPathComponent("Logs", isDirectory: true)
             
             if !fm.fileExists(atPath: logsDir.path) {
@@ -204,8 +205,6 @@ final class LocalStaticHTTPServer {
                 startSemaphore.signal()
             case .waiting(let reason):
                 InstallLogger.shared.log("Listener waiting: \(reason)")
-            case .preparing:
-                InstallLogger.shared.log("Listener preparing...")
             case .setup:
                 InstallLogger.shared.log("Listener in setup state")
             @unknown default:
@@ -362,13 +361,13 @@ final class LocalStaticHTTPServer {
     private func sendSimpleResponse(connection: NWConnection, status: Int, text: String) {
         let body = text + "\n"
         // fixed: build Data from full string rather than trying to add UTF8View slices
-        let combined = Data(( "HTTP/1.1 \(status) \(httpStatusText(status))\r\n" +
+        let combined = Data(( "HTTP/1.1 \(status) \(self.httpStatusText(status))\r\n" +
                               "Content-Length: \(body.utf8.count)\r\n" +
                               "Content-Type: text/plain\r\n" +
                               "Connection: close\r\n\r\n" +
                               body ).utf8)
         connection.send(content: combined, completion: .contentProcessed({ _ in
-            InstallLogger.shared.logDebug("Sent response: \(status) \(httpStatusText(status))")
+            InstallLogger.shared.logDebug("Sent response: \(status) \(self.httpStatusText(status))")
         }))
     }
 
@@ -410,14 +409,12 @@ public func installApp(from ipaURL: URL) throws {
     let fm = FileManager.default
     InstallLogger.shared.log("FileManager initialized")
     
-    let documents: URL
-    do {
-        documents = try fm.urls(for: .documentDirectory, in: .userDomainMask).first!
-        InstallLogger.shared.log("Documents directory: \(documents.path)")
-    } catch {
-        InstallLogger.shared.logError("Failed to get documents directory: \(error)")
-        throw error
+    // FIX: Remove 'try' from non-throwing function
+    guard let documents = fm.urls(for: .documentDirectory, in: .userDomainMask).first else {
+        InstallLogger.shared.logError("Failed to get documents directory")
+        throw InstallAppError.fileWriteFailed("Failed to get documents directory")
     }
+    InstallLogger.shared.log("Documents directory: \(documents.path)")
     
     let appRoot = documents.appendingPathComponent("AppFolder", isDirectory: true)
     if !fm.fileExists(atPath: appRoot.path) {
