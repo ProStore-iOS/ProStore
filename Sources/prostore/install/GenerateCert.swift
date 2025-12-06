@@ -358,3 +358,4 @@ public final class GenerateCert {
             throw CertGenError.writeFailed("i2d_PKCS12_bio failed for \(path)")
         }
     }
+}

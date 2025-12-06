@@ -412,7 +412,7 @@ public func installApp(from ipaURL: URL) throws {
             if status == errSecSuccess,
                let arr = items as? [[String: Any]],
                let first = arr.first,
-               let identityRef = first[kSecImportItemIdentity as String] as? SecIdentity
+               let identityRef = first[kSecImportItemIdentity as String] as! SecIdentity
             {
                 // convert to sec_identity_t for sec_protocol_options_set_local_identity()
                 // sec_identity_create is available on modern Apple SDKs — returns sec_identity_t?
