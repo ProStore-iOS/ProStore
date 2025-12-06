@@ -24,6 +24,9 @@ struct MainSidebarView: View {
                 NavigationLink(value: SidebarItem.updater) {
                     Label("Updater", systemImage: "square.and.arrow.down")
                 }
+                NavigationLink(value: SidebarItem.test) {
+                    Label("Test Install", systemImage: "checkmark.seal")
+                }
                 NavigationLink(value: SidebarItem.about) {
                     Label("About", systemImage: "info.circle")
                 }
@@ -59,6 +62,12 @@ struct MainSidebarView: View {
                         .navigationTitle("About")
                         .navigationBarTitleDisplayMode(.large)
                 }
+            case .about:
+                NavigationStack {
+                    CertTestView()
+                        .navigationTitle("Test Install")
+                        .navigationBarTitleDisplayMode(.large)
+                }
             case .updater:
                 NavigationStack {
                     UpdaterView()
@@ -74,6 +83,7 @@ struct MainSidebarView: View {
 
 enum SidebarItem: Hashable {
     case updater
+    case test
     case certificates
     case apps
     case about
