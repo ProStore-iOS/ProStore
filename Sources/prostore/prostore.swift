@@ -2,9 +2,16 @@ import SwiftUI
 
 @main
 struct ProStore: App {
+    @AppStorage("hasCompletedSetup") private var hasCompletedSetup: Bool = false
     var body: some Scene {
         WindowGroup {
-            MainSidebarView()
+            if hasCompletedSetup {
+                MainSidebarView()
+            } else {
+                SetupView {
+                    hasCompletedSetup = true
+                }
+            }
         }
     }
 }
@@ -88,5 +95,3 @@ enum SidebarItem: Hashable {
     case apps
     case about
 }
-
-
