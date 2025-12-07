@@ -130,6 +130,8 @@ final class LocalStaticHTTPServer {
     private var rootDirectory: URL?
     private let queue = DispatchQueue(label: "LocalStaticHTTPServer.queue")
     private var serverStarted = false
+    private var activeConnections: Set<NWConnection> = []
+    private let connectionsLock = NSLock()
 
     // Start HTTP (or HTTPS if tlsIdentity is provided) on given port. Serves static files from rootDir.
     func start(host: NWEndpoint.Host = .ipv4(IPv4Address("127.0.0.1")!),
@@ -140,6 +142,11 @@ final class LocalStaticHTTPServer {
         InstallLogger.shared.log("Starting HTTP server with port: \(port), tlsIdentity: \(tlsIdentity != nil ? "present" : "nil")")
         self.rootDirectory = rootDir
         self.serverStarted = false
+        
+        // Clear any existing connections
+        connectionsLock.lock()
+        activeConnections.removeAll()
+        connectionsLock.unlock()
 
         // Create TCP params and attach TLS options if identity provided
         let tcpOptions = NWProtocolTCP.Options()
@@ -186,7 +193,6 @@ final class LocalStaticHTTPServer {
         listener.newConnectionHandler = { [weak self] connection in
             guard let self = self else { return }
             InstallLogger.shared.logDebug("New connection received")
-            connection.start(queue: self.queue)
             self.handleConnection(connection)
         }
 
@@ -251,6 +257,14 @@ final class LocalStaticHTTPServer {
 
     func stop() {
         InstallLogger.shared.log("Stopping HTTP server")
+        
+        connectionsLock.lock()
+        for connection in activeConnections {
+            connection.cancel()
+        }
+        activeConnections.removeAll()
+        connectionsLock.unlock()
+        
         listener?.cancel()
         listener = nil
         serverStarted = false
@@ -258,6 +272,10 @@ final class LocalStaticHTTPServer {
 
     // Very minimal GET-only static file handler.
     private func handleConnection(_ connection: NWConnection) {
+        connectionsLock.lock()
+        activeConnections.insert(connection)
+        connectionsLock.unlock()
+        
         var received = Data()
 
         func receiveMore() {
@@ -266,7 +284,6 @@ final class LocalStaticHTTPServer {
                     received.append(data)
                     // If header end reached
                     if let range = received.range(of: Data("\r\n\r\n".utf8)) {
-                        // fixed: use half-open Range 0..<range.upperBound
                         self.processHTTPRequest(connection: connection, headerData: received.subdata(in: 0..<range.upperBound))
                         return
                     }
@@ -280,14 +297,14 @@ final class LocalStaticHTTPServer {
             }
         }
 
+        connection.start(queue: queue)
         receiveMore()
     }
 
     private func processHTTPRequest(connection: NWConnection, headerData: Data) {
-        defer { connection.cancel() }
-
         guard let header = String(data: headerData, encoding: .utf8) else { 
             InstallLogger.shared.logDebug("Failed to decode HTTP header")
+            self.removeConnection(connection)
             return 
         }
         
@@ -298,9 +315,15 @@ final class LocalStaticHTTPServer {
         }
         
         // parse the request line
-        guard let requestLine = lines.first else { return }
+        guard let requestLine = lines.first else { 
+            self.removeConnection(connection)
+            return
+        }
         let comps = requestLine.components(separatedBy: " ")
-        guard comps.count >= 2 else { return }
+        guard comps.count >= 2 else { 
+            self.removeConnection(connection)
+            return
+        }
         let method = comps[0]
         var path = comps[1]
         // strip query
@@ -350,12 +373,25 @@ final class LocalStaticHTTPServer {
             connection.send(content: headerDataToSend, completion: .contentProcessed({ _ in
                 connection.send(content: data, completion: .contentProcessed({ _ in
                     InstallLogger.shared.logDebug("File sent successfully: \(path)")
+                    // Don't cancel immediately, let the client close
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        self.removeConnection(connection)
+                    }
                 }))
             }))
         } catch {
             InstallLogger.shared.logError("Read error for file \(path): \(error.localizedDescription)")
             sendSimpleResponse(connection: connection, status: 500, text: "Read error: \(error.localizedDescription)")
         }
+    }
+    
+    private func removeConnection(_ connection: NWConnection) {
+        connectionsLock.lock()
+        if activeConnections.contains(connection) {
+            connection.cancel()
+            activeConnections.remove(connection)
+        }
+        connectionsLock.unlock()
     }
 
     private func sendSimpleResponse(connection: NWConnection, status: Int, text: String) {
@@ -368,6 +404,9 @@ final class LocalStaticHTTPServer {
                               body ).utf8)
         connection.send(content: combined, completion: .contentProcessed({ _ in
             InstallLogger.shared.logDebug("Sent response: \(status) \(self.httpStatusText(status))")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.removeConnection(connection)
+            }
         }))
     }
 
@@ -639,16 +678,26 @@ public func installApp(from ipaURL: URL) throws {
     var tlsIdentity: sec_identity_t? = nil
     let p12URL = sslDir.appendingPathComponent("localhost.p12")
     
+    // Function to convert OSStatus to readable string
+    func securityErrorToString(_ status: OSStatus) -> String {
+        if let message = SecCopyErrorMessageString(status, nil) {
+            return message as String
+        }
+        return "Unknown error: \(status)"
+    }
+    
     if fm.fileExists(atPath: p12URL.path) {
         InstallLogger.shared.log("Found PKCS12 file at \(p12URL.path)")
-        if let pData = try? Data(contentsOf: p12URL) {
+        do {
+            let pData = try Data(contentsOf: p12URL)
             InstallLogger.shared.log("PKCS12 file size: \(pData.count) bytes")
-            // PKCS#12 has no password; pass empty string
+            
+            // Try with empty password first
             let options: CFDictionary = [kSecImportExportPassphrase as String: ""] as CFDictionary
             var items: CFArray? = nil
             let status = SecPKCS12Import(pData as CFData, options, &items)
-            InstallLogger.shared.log("SecPKCS12Import status: \(status)")
-
+            InstallLogger.shared.log("SecPKCS12Import status: \(status) - \(securityErrorToString(status))")
+            
             if status == errSecSuccess,
                let arr = items as? [[String: Any]],
                let first = arr.first {
@@ -656,28 +705,51 @@ public func installApp(from ipaURL: URL) throws {
                 
                 // The import dictionary values are Any; safely cast to SecIdentity
                 if let identityAny = first[kSecImportItemIdentity as String] {
-                    do {
-                        let identityRef = identityAny as! SecIdentity
-                        InstallLogger.shared.log("SecIdentity cast successful")
-                        // Convert to sec_identity_t for sec_protocol_options_set_local_identity()
-                        if let secId = sec_identity_create(identityRef) {
-                            tlsIdentity = secId
-                            InstallLogger.shared.logSuccess("TLS identity created successfully")
-                        } else {
-                            InstallLogger.shared.logWarning("sec_identity_create failed; falling back to HTTP")
-                        }
-                    } catch {
-                        InstallLogger.shared.logError("Failed to cast to SecIdentity: \(error)")
+                    let identityRef = identityAny as! SecIdentity
+                    InstallLogger.shared.log("SecIdentity cast successful")
+                    // Convert to sec_identity_t for sec_protocol_options_set_local_identity()
+                    if let secId = sec_identity_create(identityRef) {
+                        tlsIdentity = secId
+                        InstallLogger.shared.logSuccess("TLS identity created successfully")
+                    } else {
+                        InstallLogger.shared.logWarning("sec_identity_create failed; falling back to HTTP")
                     }
                 } else {
                     // No identity entry in the import result
                     InstallLogger.shared.logWarning("PKCS#12 import produced no SecIdentity. Will use HTTP only.")
                 }
             } else {
-                InstallLogger.shared.logWarning("PKCS12 import failed (status \(status)). Will use HTTP only.")
+                // Try with common passwords if empty password fails
+                InstallLogger.shared.log("Trying common passwords for PKCS12 file...")
+                let commonPasswords = ["password", "123456", "admin", "localhost", "ssl", "cert", "prostore"]
+                var foundPassword = false
+                
+                for password in commonPasswords {
+                    let optionsWithPassword: CFDictionary = [kSecImportExportPassphrase as String: password] as CFDictionary
+                    var passwordItems: CFArray? = nil
+                    let passwordStatus = SecPKCS12Import(pData as CFData, optionsWithPassword, &passwordItems)
+                    
+                    if passwordStatus == errSecSuccess,
+                       let arr = passwordItems as? [[String: Any]],
+                       let first = arr.first,
+                       let identityAny = first[kSecImportItemIdentity as String] {
+                        
+                        let identityRef = identityAny as! SecIdentity
+                        if let secId = sec_identity_create(identityRef) {
+                            tlsIdentity = secId
+                            InstallLogger.shared.logSuccess("TLS identity created successfully with password: '\(password)'")
+                            foundPassword = true
+                            break
+                        }
+                    }
+                }
+                
+                if !foundPassword {
+                    InstallLogger.shared.logWarning("PKCS12 import failed even with common passwords. Will use HTTP only.")
+                }
             }
-        } else {
-            InstallLogger.shared.logWarning("Failed to read PKCS#12 file at \(p12URL.path); using HTTP only")
+        } catch {
+            InstallLogger.shared.logError("Failed to read PKCS#12 file: \(error)")
         }
     } else {
         InstallLogger.shared.log("No PKCS#12 found at \(p12URL.path); using HTTP only")
@@ -691,6 +763,10 @@ public func installApp(from ipaURL: URL) throws {
     do {
         startedPort = try LocalStaticHTTPServer.shared.start(port: chosenPort, rootDir: workDir, tlsIdentity: tlsIdentity)
         InstallLogger.shared.logSuccess("Server started on port \(startedPort)")
+        
+        // Give the server a moment to stabilize
+        InstallLogger.shared.log("Waiting for server to stabilize...")
+        Thread.sleep(forTimeInterval: 0.5)
     } catch {
         InstallLogger.shared.logError("Failed to start local server: \(error)")
         throw InstallAppError.serverStartFailed("Failed to start local server: \(error)")
