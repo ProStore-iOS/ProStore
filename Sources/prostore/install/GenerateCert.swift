@@ -269,11 +269,7 @@ public final class GenerateCert {
         }
        
         // Try to add SAN, but ignore failure (no logging)
-        do {
-            try addSubjectAltName_IP_simple(cert: cert, ipString: "127.0.0.1")
-        } catch {
-            // intentionally ignored
-        }
+        try addSubjectAltName_IP(cert: cert, ip: "127.0.0.1")
        
         if let ext_bc = X509V3_EXT_conf_nid(nil, nil, NID_basic_constraints, "CA:FALSE") {
             defer { X509_EXTENSION_free(ext_bc) }
@@ -322,24 +318,36 @@ public final class GenerateCert {
     }
     
     // Simpler version that doesn't use deprecated stack functions
-    private static func addSubjectAltName_IP_simple(cert: OpaquePointer?, ipString: String) throws {
-        guard let cert = cert else { 
-            throw CertGenError.sanCreationFailed("cert nil") 
-        }
-       
-        // Create SAN string in format "IP:127.0.0.1"
-        let sanString = "IP:\(ipString)"
-       
-        guard let ext = X509V3_EXT_conf_nid(nil, nil, NID_subject_alt_name, sanString) else {
-            throw CertGenError.sanCreationFailed("X509V3_EXT_conf_nid failed for SAN")
-        }
-       
-        defer { X509_EXTENSION_free(ext) }
-       
-        if X509_add_ext(cert, ext, -1) != 1 {
-            throw CertGenError.sanCreationFailed("X509_add_ext failed for SAN")
-        }
+private static func addSubjectAltName_IP(cert: OpaquePointer, ip: String) throws {
+    guard let conf = NCONF_new(nil) else {
+        throw CertGenError.sanCreationFailed("NCONF_new failed")
     }
+    defer { NCONF_free(conf) }
+
+    // Create a minimal conf with just the SAN section
+    let confString = """
+    [san]
+    IP.1 = \(ip)
+    """
+    if NCONF_load_bio(conf, BIO_new_mem_buf(confString, -1), nil) <= 0 {
+        throw CertGenError.sanCreationFailed("NCONF_load_bio failed")
+    }
+
+    var ctx: OpaquePointer?
+    X509V3_set_ctx(&ctx, cert, cert, nil, nil, 0)
+    X509V3_set_nconf(ctx, conf)
+
+    guard let ext = X509V3_EXT_nconf_nid(nil, ctx, NID_subject_alt_name, "san") else {
+        let err = ERR_get_error()
+        let reason = ERR_reason_error_string(err)
+        throw CertGenError.sanCreationFailed("X509V3_EXT_nconf_nid failed: \(reason ?? "unknown")")
+    }
+    defer { X509_EXTENSION_free(ext) }
+
+    guard X509_add_ext(cert, ext, -1) != 0 else {
+        throw CertGenError.sanCreationFailed("X509_add_ext failed")
+    }
+}
     
     private static func writePrivateKeyPEM(pkey: OpaquePointer?, to path: String) throws {
         guard let pkey = pkey else { 
