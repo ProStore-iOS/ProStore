@@ -5,9 +5,11 @@ import Foundation
 public struct AppDetailView: View {
     let app: AltApp
     @StateObject private var downloadManager = DownloadSignManager()
-    @State private var showCertError = false
     @Environment(\.dismiss) private var dismiss
-    
+
+    // NEW: alert state for missing certificate
+    @State private var showCertError = false
+
     private var latestVersion: AppVersion? {
         app.versions?.first
     }
@@ -191,10 +193,6 @@ public struct AppDetailView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
-                .alert("Please select a certificate first!", isPresented: $showCertError) {
-                    Button("OK", role: .cancel) { }
-                }
-                
             }
             
             // Floating Download Button
@@ -204,6 +202,7 @@ public struct AppDetailView: View {
                     HStack {
                         Spacer()
                         Button(action: {
+                            // CHECK: show error immediately if no cert selected
                             if downloadManager.selectedCertificate == nil {
                                 showCertError = true
                                 return
@@ -289,6 +288,11 @@ public struct AppDetailView: View {
                     .foregroundColor(.red)
                 } else if app.downloadURL != nil {
                     Button(action: {
+                        // Also check here if you want consistent behaviour
+                        if downloadManager.selectedCertificate == nil {
+                            showCertError = true
+                            return
+                        }
                         downloadManager.downloadAndSign(app: app)
                     }) {
                         HStack(spacing: 4) {
@@ -298,6 +302,10 @@ public struct AppDetailView: View {
                     }
                 }
             }
+        }
+        // ALERT: shown immediately when no certificate selected
+        .alert("Please select a certificate first!", isPresented: $showCertError) {
+            Button("OK", role: .cancel) { }
         }
         .animation(.easeInOut(duration: 0.3), value: downloadManager.isProcessing)
         .animation(.easeInOut(duration: 0.3), value: downloadManager.showSuccess)
