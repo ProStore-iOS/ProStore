@@ -145,143 +145,171 @@ final class LocalStaticHTTPServer {
     }
 }
 
-    // Start HTTP (or HTTPS if tlsIdentity is provided) on given port. Serves static files from rootDir.
-    func start(host: NWEndpoint.Host = .ipv4(IPv4Address("127.0.0.1")!),
-               port: UInt16 = 7404,
-               rootDir: URL,
-               tlsIdentity: sec_identity_t? = nil) throws -> UInt16
-    {
-        InstallLogger.shared.log("Starting HTTP server with port: \(port), tlsIdentity: \(tlsIdentity != nil ? "present" : "nil")")
-        self.rootDirectory = rootDir
-        self.serverStarted = false
-        
-        // Clear any existing connections
-        connectionsLock.lock()
-        activeConnections.removeAll()
-        connectionsLock.unlock()
+func start(host: NWEndpoint.Host = .ipv4(IPv4Address("127.0.0.1")!),
+           port: UInt16 = 7404,
+           rootDir: URL,
+           tlsIdentity: sec_identity_t? = nil) throws -> UInt16
+{
+    InstallLogger.shared.log("Starting HTTP server with port: \(port), tlsIdentity: \(tlsIdentity != nil ? "present" : "nil")")
+    self.rootDirectory = rootDir
+    self.serverStarted = false
 
-        // Create TCP params and attach TLS options if identity provided
-        let tcpOptions = NWProtocolTCP.Options()
-        let tlsOptions: NWProtocolTLS.Options? = {
-            guard let identity = tlsIdentity else { 
-                InstallLogger.shared.log("No TLS identity provided, using HTTP")
-                return nil 
-            }
-            InstallLogger.shared.log("Configuring TLS options with provided identity")
-            let options = NWProtocolTLS.Options()
-            // configure TLS min/max
-            sec_protocol_options_set_min_tls_protocol_version(options.securityProtocolOptions, .TLSv12)
-            sec_protocol_options_set_max_tls_protocol_version(options.securityProtocolOptions, .TLSv13)
-            // set local identity (the sec_identity_t)
-            sec_protocol_options_set_local_identity(options.securityProtocolOptions, identity)
-            return options
-        }()
+    // If there is an existing listener, stop it first so the port gets freed.
+    if listener != nil {
+        InstallLogger.shared.log("An existing listener was found — stopping it before starting a new one")
+        stop()
+        // give the OS a tiny moment to free the port
+        Thread.sleep(forTimeInterval: 0.05)
+    }
 
-        let params: NWParameters
-        if let tls = tlsOptions {
-            params = NWParameters(tls: tls, tcp: tcpOptions)
-            isTLS = true
-            InstallLogger.shared.log("Server configured with TLS (HTTPS)")
-        } else {
-            params = NWParameters(tls: nil, tcp: tcpOptions)
-            isTLS = false
-            InstallLogger.shared.log("Server configured without TLS (HTTP)")
+    // (No longer blindly removing activeConnections here — stop() handles that)
+
+    // Create TCP params and attach TLS options if identity provided
+    let tcpOptions = NWProtocolTCP.Options()
+    let tlsOptions: NWProtocolTLS.Options? = {
+        guard let identity = tlsIdentity else {
+            InstallLogger.shared.log("No TLS identity provided, using HTTP")
+            return nil
         }
+        InstallLogger.shared.log("Configuring TLS options with provided identity")
+        let options = NWProtocolTLS.Options()
+        sec_protocol_options_set_min_tls_protocol_version(options.securityProtocolOptions, .TLSv12)
+        sec_protocol_options_set_max_tls_protocol_version(options.securityProtocolOptions, .TLSv13)
+        sec_protocol_options_set_local_identity(options.securityProtocolOptions, identity)
+        return options
+    }()
 
-        let nwPort = NWEndpoint.Port(rawValue: port) ?? NWEndpoint.Port(integerLiteral: 0)
-        let listener: NWListener
+    let params: NWParameters
+    if let tls = tlsOptions {
+        params = NWParameters(tls: tls, tcp: tcpOptions)
+        isTLS = true
+        InstallLogger.shared.log("Server configured with TLS (HTTPS)")
+    } else {
+        params = NWParameters(tls: nil, tcp: tcpOptions)
+        isTLS = false
+        InstallLogger.shared.log("Server configured without TLS (HTTP)")
+    }
+
+    let requestedPort = port
+    var listener: NWListener
+    // Try requested port first; if it fails try ephemeral port 0
+    do {
+        let nwPort = NWEndpoint.Port(rawValue: requestedPort) ?? NWEndpoint.Port(integerLiteral: 0)
+        listener = try NWListener(using: params, on: nwPort)
+        InstallLogger.shared.log("NWListener created successfully on port \(requestedPort)")
+    } catch {
+        InstallLogger.shared.logWarning("NWListener init failed for port \(requestedPort): \(error.localizedDescription). Trying ephemeral port (0).")
         do {
-            listener = try NWListener(using: params, on: nwPort)
-            InstallLogger.shared.log("NWListener created successfully")
+            listener = try NWListener(using: params, on: NWEndpoint.Port(integerLiteral: 0))
+            InstallLogger.shared.log("NWListener created on ephemeral port (0) as fallback")
         } catch {
-            InstallLogger.shared.logError("NWListener init failed: \(error.localizedDescription)")
+            InstallLogger.shared.logError("NWListener init failed even on ephemeral port: \(error.localizedDescription)")
             throw InstallAppError.serverStartFailed("NWListener init failed: \(error.localizedDescription)")
         }
-
-        // Create a semaphore to wait for server to start
-        let startSemaphore = DispatchSemaphore(value: 0)
-        var startError: Error?
-        
-        listener.newConnectionHandler = { [weak self] connection in
-            guard let self = self else { return }
-            InstallLogger.shared.logDebug("New connection received")
-            self.handleConnection(connection)
-        }
-
-        listener.stateUpdateHandler = { newState in
-            switch newState {
-            case .ready:
-                InstallLogger.shared.log("Server listener is READY")
-                self.serverStarted = true
-                startSemaphore.signal()
-            case .failed(let err):
-                InstallLogger.shared.logError("Listener failed: \(String(describing: err))")
-                startError = err
-                startSemaphore.signal()
-            case .cancelled:
-                InstallLogger.shared.log("Listener cancelled")
-                startSemaphore.signal()
-            case .waiting(let reason):
-                InstallLogger.shared.log("Listener waiting: \(reason)")
-            case .setup:
-                InstallLogger.shared.log("Listener in setup state")
-            @unknown default:
-                InstallLogger.shared.log("Unknown listener state: \(newState)")
-            }
-        }
-
-        listener.start(queue: queue)
-        self.listener = listener
-        InstallLogger.shared.log("Listener started on queue")
-
-        // Wait for server to start (with timeout)
-        InstallLogger.shared.log("Waiting for server to become ready...")
-        let timeoutResult = startSemaphore.wait(timeout: .now() + 10.0)
-        
-        if timeoutResult == .timedOut {
-            InstallLogger.shared.logError("Server start timeout after 10 seconds")
-            throw InstallAppError.serverStartFailed("Server start timeout")
-        }
-        
-        if let error = startError {
-            InstallLogger.shared.logError("Server failed to start: \(error.localizedDescription)")
-            throw InstallAppError.serverStartFailed("Server failed to start: \(error.localizedDescription)")
-        }
-        
-        if !serverStarted {
-            InstallLogger.shared.logError("Server not started (serverStarted flag is false)")
-            throw InstallAppError.serverStartFailed("Server not started")
-        }
-
-        // if we started with port 0 (ephemeral), get the actual port
-        let actualPort: UInt16
-        if let localEndpoint = listener.port {
-            actualPort = UInt16(localEndpoint.rawValue)
-            InstallLogger.shared.log("Server bound to port: \(actualPort)")
-        } else {
-            actualPort = port
-            InstallLogger.shared.log("Using requested port: \(actualPort)")
-        }
-
-        InstallLogger.shared.logSuccess("Server successfully started on \(isTLS ? "https" : "http")://127.0.0.1:\(actualPort)")
-        return actualPort
     }
 
-    func stop() {
-        InstallLogger.shared.log("Stopping HTTP server")
-        
-        connectionsLock.lock()
-        for wrapper in activeConnections {
-            wrapper.connection.cancel()
-        }
+    // Create a semaphore to wait for server to start
+    let startSemaphore = DispatchSemaphore(value: 0)
+    var startError: Error?
 
-        activeConnections.removeAll()
-        connectionsLock.unlock()
-        
-        listener?.cancel()
-        listener = nil
-        serverStarted = false
+    listener.newConnectionHandler = { [weak self] connection in
+        guard let self = self else { return }
+        InstallLogger.shared.logDebug("New connection received")
+        self.handleConnection(connection)
     }
+
+    listener.stateUpdateHandler = { [weak self] newState in
+        guard let self = self else { return }
+        switch newState {
+        case .ready:
+            InstallLogger.shared.log("Server listener is READY")
+            self.serverStarted = true
+            startSemaphore.signal()
+        case .failed(let err):
+            InstallLogger.shared.logError("Listener failed: \(String(describing: err))")
+            startError = err
+            startSemaphore.signal()
+        case .cancelled:
+            InstallLogger.shared.log("Listener cancelled")
+            // ensure serverStarted is false when cancelled
+            self.serverStarted = false
+            startSemaphore.signal()
+        case .waiting(let reason):
+            InstallLogger.shared.log("Listener waiting: \(reason)")
+        case .setup:
+            InstallLogger.shared.log("Listener in setup state")
+        @unknown default:
+            InstallLogger.shared.log("Unknown listener state: \(newState)")
+        }
+    }
+
+    listener.start(queue: queue)
+    self.listener = listener
+    InstallLogger.shared.log("Listener started on queue")
+
+    // Wait for server to start (with timeout)
+    InstallLogger.shared.log("Waiting for server to become ready...")
+    let timeoutResult = startSemaphore.wait(timeout: .now() + 10.0)
+
+    if timeoutResult == .timedOut {
+        InstallLogger.shared.logError("Server start timeout after 10 seconds")
+        // Cancel and cleanup local listener reference if still present
+        listener.cancel()
+        self.listener = nil
+        throw InstallAppError.serverStartFailed("Server start timeout")
+    }
+
+    if let error = startError {
+        InstallLogger.shared.logError("Server failed to start: \(error.localizedDescription)")
+        // Cancel and cleanup
+        listener.cancel()
+        self.listener = nil
+        throw InstallAppError.serverStartFailed("Server failed to start: \(error.localizedDescription)")
+    }
+
+    if !serverStarted {
+        InstallLogger.shared.logError("Server not started (serverStarted flag is false)")
+        listener.cancel()
+        self.listener = nil
+        throw InstallAppError.serverStartFailed("Server not started")
+    }
+
+    // if we started with port 0 (ephemeral), get the actual port
+    let actualPort: UInt16
+    if let localEndpoint = listener.port {
+        actualPort = UInt16(localEndpoint.rawValue)
+        InstallLogger.shared.log("Server bound to port: \(actualPort)")
+    } else {
+        actualPort = requestedPort
+        InstallLogger.shared.log("Using requested port: \(actualPort)")
+    }
+
+    InstallLogger.shared.logSuccess("Server successfully started on \(isTLS ? "https" : "http")://127.0.0.1:\(actualPort)")
+    return actualPort
+}
+
+func stop() {
+    InstallLogger.shared.log("Stopping HTTP server")
+
+    connectionsLock.lock()
+    // cancel all tracked connections
+    for wrapper in activeConnections {
+        wrapper.connection.cancel()
+    }
+    activeConnections.removeAll()
+    connectionsLock.unlock()
+
+    // cancel the listener and remove reference
+    if let l = listener {
+        InstallLogger.shared.log("Cancelling listener")
+        l.cancel()
+        // give the OS a brief moment to actually close the socket so a subsequent start on the same port won't immediately fail
+        Thread.sleep(forTimeInterval: 0.05)
+    }
+
+    listener = nil
+    serverStarted = false
+}
 
     // Very minimal GET-only static file handler.
     private func handleConnection(_ connection: NWConnection) {
@@ -904,4 +932,5 @@ public func installApp(from ipaURL: URL) throws {
     try? summary.write(to: summaryURL, atomically: true, encoding: .utf8)
     InstallLogger.shared.log("Summary written to: \(summaryURL.path)")
 }
+
 
