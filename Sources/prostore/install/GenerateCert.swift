@@ -1,11 +1,13 @@
 import Foundation
 import OpenSSL
+
 enum CertGenError: Error {
     case keyGenerationFailed(String)
     case x509CreationFailed(String)
     case writeFailed(String)
     case sanCreationFailed(String)
 }
+
 public final class GenerateCert {
    
     public static func createAndSaveCerts(caCN: String = "ProStore",
@@ -17,15 +19,25 @@ public final class GenerateCert {
         OPENSSL_init_ssl(UInt64(OPENSSL_INIT_LOAD_SSL_STRINGS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS), nil)
         OPENSSL_init_crypto(UInt64(OPENSSL_INIT_LOAD_CONFIG | OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS), nil)
        
-        guard let caPkey = try generateRSAKey(bits: rsaBits) else { throw CertGenError.keyGenerationFailed("CA key generation failed") }
+        guard let caPkey = try generateRSAKey(bits: rsaBits) else { 
+            throw CertGenError.keyGenerationFailed("CA key generation failed") 
+        }
        
         guard let caX509 = try createSelfSignedCertificate(pkey: caPkey, commonName: caCN, days: daysValid, isCA: true) else {
+            EVP_PKEY_free(caPkey)
             throw CertGenError.x509CreationFailed("CA certificate creation failed")
         }
        
-        guard let serverPkey = try generateRSAKey(bits: rsaBits) else { throw CertGenError.keyGenerationFailed("Server key generation failed") }
+        guard let serverPkey = try generateRSAKey(bits: rsaBits) else { 
+            EVP_PKEY_free(caPkey)
+            X509_free(caX509)
+            throw CertGenError.keyGenerationFailed("Server key generation failed") 
+        }
        
         guard let serverX509 = try createCertificateSignedByCA(serverPKey: serverPkey, caPkey: caPkey, caX509: caX509, commonName: serverCN, days: daysValid) else {
+            EVP_PKEY_free(caPkey)
+            X509_free(caX509)
+            EVP_PKEY_free(serverPkey)
             throw CertGenError.x509CreationFailed("Server certificate creation failed")
         }
        
@@ -48,7 +60,8 @@ public final class GenerateCert {
         try writePrivateKeyPEM(pkey: serverPkey, to: serverKeyURL.path)
         try writeX509PEM(x509: serverX509, to: serverCertURL.path)
        
-        try writePKCS12(pkey: serverPkey, cert: serverX509, caCert: caX509, to: localhostP12URL.path, password: nil)
+        // Try with empty password first, which is what installApp.swift expects
+        try writePKCS12(pkey: serverPkey, cert: serverX509, caCert: caX509, to: localhostP12URL.path, password: "")
        
         EVP_PKEY_free(caPkey)
         X509_free(caX509)
@@ -90,11 +103,14 @@ public final class GenerateCert {
        
         return pkey
     }
+    
     private static func createSelfSignedCertificate(pkey: OpaquePointer?,
                                                     commonName: String,
                                                     days: Int32,
                                                     isCA: Bool) throws -> OpaquePointer? {
-        guard let x509 = X509_new() else { throw CertGenError.x509CreationFailed("X509_new failed") }
+        guard let x509 = X509_new() else { 
+            throw CertGenError.x509CreationFailed("X509_new failed") 
+        }
        
         X509_set_version(x509, 2)
        
@@ -179,12 +195,15 @@ public final class GenerateCert {
        
         return x509
     }
+    
     private static func createCertificateSignedByCA(serverPKey: OpaquePointer?,
                                                     caPkey: OpaquePointer?,
                                                     caX509: OpaquePointer?,
                                                     commonName: String,
                                                     days: Int32) throws -> OpaquePointer? {
-        guard let cert = X509_new() else { throw CertGenError.x509CreationFailed("X509_new failed") }
+        guard let cert = X509_new() else { 
+            throw CertGenError.x509CreationFailed("X509_new failed") 
+        }
        
         X509_set_version(cert, 2)
        
@@ -272,6 +291,15 @@ public final class GenerateCert {
             }
         }
        
+        // Also add extended key usage for server authentication
+        if let ext_eku = X509V3_EXT_conf_nid(nil, nil, NID_ext_key_usage, "serverAuth") {
+            defer { X509_EXTENSION_free(ext_eku) }
+            if X509_add_ext(cert, ext_eku, -1) != 1 {
+                X509_free(cert)
+                throw CertGenError.x509CreationFailed("X509_add_ext for ext_key_usage failed")
+            }
+        }
+       
         guard let caKey = caPkey else {
             X509_free(cert)
             throw CertGenError.x509CreationFailed("CA private key missing")
@@ -284,15 +312,20 @@ public final class GenerateCert {
        
         return cert
     }
-    @discardableResult private static func addNameEntry(name: OpaquePointer?, field: String, value: String) -> Int32 {
+    
+    @discardableResult 
+    private static func addNameEntry(name: OpaquePointer?, field: String, value: String) -> Int32 {
         guard let name = name else { return 0 }
         return value.withCString { valuePtr in
             return X509_NAME_add_entry_by_txt(name, field, MBSTRING_ASC, valuePtr, -1, -1, 0)
         }
     }
+    
     // Simpler version that doesn't use deprecated stack functions
     private static func addSubjectAltName_IP_simple(cert: OpaquePointer?, ipString: String) throws {
-        guard let cert = cert else { throw CertGenError.sanCreationFailed("cert nil") }
+        guard let cert = cert else { 
+            throw CertGenError.sanCreationFailed("cert nil") 
+        }
        
         // Create SAN string in format "IP:127.0.0.1"
         let sanString = "IP:\(ipString)"
@@ -307,28 +340,44 @@ public final class GenerateCert {
             throw CertGenError.sanCreationFailed("X509_add_ext failed for SAN")
         }
     }
+    
     private static func writePrivateKeyPEM(pkey: OpaquePointer?, to path: String) throws {
-        guard let pkey = pkey else { throw CertGenError.writeFailed("pkey nil") }
-        guard let bio = BIO_new_file(path, "w") else { throw CertGenError.writeFailed("BIO_new_file failed for \(path)") }
+        guard let pkey = pkey else { 
+            throw CertGenError.writeFailed("pkey nil") 
+        }
+        guard let bio = BIO_new_file(path, "w") else { 
+            throw CertGenError.writeFailed("BIO_new_file failed for \(path)") 
+        }
         defer { BIO_free_all(bio) }
        
         if PEM_write_bio_PrivateKey(bio, pkey, nil, nil, 0, nil, nil) != 1 {
             throw CertGenError.writeFailed("PEM_write_bio_PrivateKey failed for \(path)")
         }
     }
+    
     private static func writeX509PEM(x509: OpaquePointer?, to path: String) throws {
-        guard let x509 = x509 else { throw CertGenError.writeFailed("x509 nil") }
-        guard let bio = BIO_new_file(path, "w") else { throw CertGenError.writeFailed("BIO_new_file failed for \(path)") }
+        guard let x509 = x509 else { 
+            throw CertGenError.writeFailed("x509 nil") 
+        }
+        guard let bio = BIO_new_file(path, "w") else { 
+            throw CertGenError.writeFailed("BIO_new_file failed for \(path)") 
+        }
         defer { BIO_free_all(bio) }
        
         if PEM_write_bio_X509(bio, x509) != 1 {
             throw CertGenError.writeFailed("PEM_write_bio_X509 failed for \(path)")
         }
     }
+    
     private static func writePKCS12(pkey: OpaquePointer?, cert: OpaquePointer?, caCert: OpaquePointer?, to path: String, password: String?) throws {
-        guard let pkey = pkey, let cert = cert else { throw CertGenError.writeFailed("pkey or cert nil") }
+        guard let pkey = pkey, let cert = cert else { 
+            throw CertGenError.writeFailed("pkey or cert nil") 
+        }
         
-        let pass: UnsafePointer<CChar>? = password?.utf8CString.withUnsafeBufferPointer { $0.baseAddress } ?? nil
+        // Always use an empty string if password is nil
+        let passString = password ?? ""
+        let pass: UnsafePointer<CChar>? = passString.utf8CString.withUnsafeBufferPointer { $0.baseAddress }
+        
         let friendlyName = "localhost"
         let name: UnsafePointer<CChar>? = friendlyName.utf8CString.withUnsafeBufferPointer { $0.baseAddress }
         
@@ -351,7 +400,9 @@ public final class GenerateCert {
         }
         defer { PKCS12_free(p12) }
         
-        guard let bio = BIO_new_file(path, "w") else { throw CertGenError.writeFailed("BIO_new_file failed for \(path)") }
+        guard let bio = BIO_new_file(path, "wb") else { 
+            throw CertGenError.writeFailed("BIO_new_file failed for \(path)") 
+        }
         defer { BIO_free_all(bio) }
         
         if i2d_PKCS12_bio(bio, p12) != 1 {
