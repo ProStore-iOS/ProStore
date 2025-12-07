@@ -130,8 +130,20 @@ final class LocalStaticHTTPServer {
     private var rootDirectory: URL?
     private let queue = DispatchQueue(label: "LocalStaticHTTPServer.queue")
     private var serverStarted = false
-    private var activeConnections: Set<NWConnection> = []
+    private var activeConnections: Set<ConnectionWrapper> = []
     private let connectionsLock = NSLock()
+
+    private struct ConnectionWrapper: Hashable {
+    let connection: NWConnection
+    
+    static func == (lhs: ConnectionWrapper, rhs: ConnectionWrapper) -> Bool {
+        return ObjectIdentifier(lhs.connection) == ObjectIdentifier(rhs.connection)
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(ObjectIdentifier(connection))
+    }
+}
 
     // Start HTTP (or HTTPS if tlsIdentity is provided) on given port. Serves static files from rootDir.
     func start(host: NWEndpoint.Host = .ipv4(IPv4Address("127.0.0.1")!),
@@ -259,9 +271,10 @@ final class LocalStaticHTTPServer {
         InstallLogger.shared.log("Stopping HTTP server")
         
         connectionsLock.lock()
-        for connection in activeConnections {
-            connection.cancel()
+        for wrapper in activeConnections {
+            wrapper.connection.cancel()
         }
+
         activeConnections.removeAll()
         connectionsLock.unlock()
         
@@ -273,7 +286,7 @@ final class LocalStaticHTTPServer {
     // Very minimal GET-only static file handler.
     private func handleConnection(_ connection: NWConnection) {
         connectionsLock.lock()
-        activeConnections.insert(connection)
+        activeConnections.insert(ConnectionWrapper(connection: connection))
         connectionsLock.unlock()
         
         var received = Data()
@@ -387,9 +400,10 @@ final class LocalStaticHTTPServer {
     
     private func removeConnection(_ connection: NWConnection) {
         connectionsLock.lock()
-        if activeConnections.contains(connection) {
+        let wrapper = ConnectionWrapper(connection: connection)
+        if activeConnections.contains(wrapper) {
             connection.cancel()
-            activeConnections.remove(connection)
+            activeConnections.remove(wrapper)
         }
         connectionsLock.unlock()
     }
@@ -890,3 +904,4 @@ public func installApp(from ipaURL: URL) throws {
     try? summary.write(to: summaryURL, atomically: true, encoding: .utf8)
     InstallLogger.shared.log("Summary written to: \(summaryURL.path)")
 }
+
