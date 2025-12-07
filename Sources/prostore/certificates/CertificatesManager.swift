@@ -1,7 +1,8 @@
-// certificates.swift
+// CertificatesManager.swift
 import Foundation
 import Security
 import CryptoKit
+import Combine
 
 public enum CertificateCheckResult {
     case incorrectPassword
@@ -19,19 +20,27 @@ public enum CertificateError: Error {
     case unknown
 }
 
-public final class CertificatesManager {
-    // SHA256 hex from Data
-    static func sha256Hex(_ d: Data) -> String {
+/// CertificatesManager handles cert extraction/checking and exposes the currently selected identity.
+/// Replace `SecIdentity` with your own wrapper type if you use a custom model.
+public final class CertificatesManager: ObservableObject {
+    public static let shared = CertificatesManager()
+    private init() {}
+
+    // The currently selected certificate identity (nil if none chosen).
+    @Published public var selectedCertificate: SecIdentity? = nil
+
+    // MARK: - Utility: SHA256 hex
+    public static func sha256Hex(_ d: Data) -> String {
         let digest = SHA256.hash(data: d)
         return digest.map { String(format: "%02x", $0) }.joined()
     }
-    
-    // Export public key bytes for a certificate (SecCertificate -> SecKey -> external representation)
+
+    // MARK: - Export public key bytes for a SecCertificate
     private static func publicKeyData(from cert: SecCertificate) throws -> Data {
         guard let secKey = SecCertificateCopyKey(cert) else {
             throw CertificateError.certExtractionFailed
         }
-        
+
         var cfErr: Unmanaged<CFError>?
         guard let keyData = SecKeyCopyExternalRepresentation(secKey, &cfErr) as Data? else {
             if let cfError = cfErr?.takeRetainedValue() {
@@ -41,28 +50,27 @@ public final class CertificatesManager {
                 throw CertificateError.publicKeyExportFailed(-1)
             }
         }
-        
+
         return keyData
     }
-    
-    // Extract the <plist>...</plist> portion from a .mobileprovision (PKCS7) blob,
-    // parse it to a dictionary and return SecCertificate objects from DeveloperCertificates.
+
+    // MARK: - Extract certificates array from mobileprovision (PKCS7) blob
     private static func certificatesFromMobileProvision(_ data: Data) throws -> [SecCertificate] {
         let startTag = Data("<plist".utf8)
         let endTag = Data("</plist>".utf8)
-        
+
         guard let startRange = data.range(of: startTag),
               let endRange = data.range(of: endTag) else {
             throw CertificateError.plistExtractionFailed
         }
-        
+
         let plistData = data[startRange.lowerBound..<endRange.upperBound]
         let parsed = try PropertyListSerialization.propertyList(from: Data(plistData), options: [], format: nil)
-        
+
         guard let dict = parsed as? [String: Any] else {
             throw CertificateError.plistExtractionFailed
         }
-        
+
         var resultCerts: [SecCertificate] = []
         if let devArray = dict["DeveloperCertificates"] as? [Any] {
             for item in devArray {
@@ -78,17 +86,17 @@ public final class CertificatesManager {
                 }
             }
         }
-        
+
         if resultCerts.isEmpty {
             throw CertificateError.noCertsInProvision
         }
-        
+
         return resultCerts
     }
-    
-    /// Get the certificate's display name (subject summary)
-    public static func getCertificateName(mobileProvisionData: Data) -> String? {
-        // Extract the <plist>...</plist> block from the mobileprovision (PKCS7) blob
+
+    // MARK: - Readable display name from mobileprovision
+    public func getCertificateName(mobileProvisionData: Data) -> String? {
+        // Extract the <plist>...</plist> block
         let startTag = Data("<plist".utf8)
         let endTag = Data("</plist>".utf8)
         guard let startRange = mobileProvisionData.range(of: startTag),
@@ -99,76 +107,80 @@ public final class CertificatesManager {
         let plistDataSlice = mobileProvisionData[startRange.lowerBound..<endRange.upperBound]
         let plistData = Data(plistDataSlice)
 
-        // Parse plist into a dictionary
         guard let parsed = try? PropertyListSerialization.propertyList(from: plistData, options: [], format: nil),
               let dict = parsed as? [String: Any] else {
             return nil
         }
 
-        // Prefer TeamName if present
         if let teamName = dict["TeamName"] as? String, !teamName.isEmpty {
             return teamName
         }
-
-        // Fallback to Name (string)
         if let name = dict["Name"] as? String, !name.isEmpty {
             return name
         }
-
         return nil
     }
-    
-    /// Top-level check: returns result
+
+    // MARK: - Top-level check: verify p12 matches one of the embedded certs in mobileprovision
+    /// Returns .success(.success) if match, .success(.noMatch) if no match, or .failure(Error)
     public static func check(p12Data: Data, password: String, mobileProvisionData: Data) -> Result<CertificateCheckResult, Error> {
         let options = [kSecImportExportPassphrase as String: password] as CFDictionary
         var itemsCF: CFArray?
-        
+
         let importStatus = SecPKCS12Import(p12Data as CFData, options, &itemsCF)
-        
+
         if importStatus == errSecAuthFailed {
             return .success(.incorrectPassword)
         }
-        
+
         guard importStatus == errSecSuccess, let items = itemsCF as? [[String: Any]], items.count > 0 else {
             return .failure(CertificateError.p12ImportFailed(importStatus))
         }
-        
+
         guard let first = items.first else {
             return .failure(CertificateError.identityExtractionFailed)
         }
-        
-        let identity = first[kSecImportItemIdentity as String] as! SecIdentity
-        
+
+        // kSecImportItemIdentity should be present
+        guard let identityAny = first[kSecImportItemIdentity as String] else {
+            return .failure(CertificateError.identityExtractionFailed)
+        }
+
+        // Attempt to cast to SecIdentity
+        guard let identity = identityAny as? SecIdentity else {
+            return .failure(CertificateError.identityExtractionFailed)
+        }
+
         var certRef: SecCertificate?
         let certStatus = SecIdentityCopyCertificate(identity, &certRef)
-        
+
         guard certStatus == errSecSuccess, let p12Cert = certRef else {
             return .failure(CertificateError.certExtractionFailed)
         }
-        
+
         do {
             let p12PubKeyData = try publicKeyData(from: p12Cert)
             let p12Hash = sha256Hex(p12PubKeyData)
-            
+
             let embeddedCerts = try certificatesFromMobileProvision(mobileProvisionData)
-            
+
             for cert in embeddedCerts {
                 do {
                     let embPubKeyData = try publicKeyData(from: cert)
                     let embHash = sha256Hex(embPubKeyData)
-                    
+
                     if embHash == p12Hash {
                         return .success(.success)
                     }
                 } catch {
+                    // continue checking other embedded certs
                     continue
                 }
             }
-            
+
             return .success(.noMatch)
         } catch {
             return .failure(error)
         }
     }
-
 }
