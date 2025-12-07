@@ -191,6 +191,10 @@ public struct AppDetailView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
+                .alert("Please select a certificate first!", isPresented: $showCertError) {
+                    Button("OK", role: .cancel) { }
+                }
+                
             }
             
             // Floating Download Button
