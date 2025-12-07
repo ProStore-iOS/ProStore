@@ -4,10 +4,15 @@ import Foundation
 
 public struct AppDetailView: View {
     let app: AltApp
+
+    // Manager that controls download/sign flow (your existing class)
     @StateObject private var downloadManager = DownloadSignManager()
+
+    // Read certificate selection from the shared CertificatesManager
+    @ObservedObject private var certificatesManager = CertificatesManager.shared
+
     @Environment(\.dismiss) private var dismiss
 
-    // NEW: alert state for missing certificate
     @State private var showCertError = false
 
     private var latestVersion: AppVersion? {
@@ -33,7 +38,7 @@ public struct AppDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
 
-                    // App Header
+                    // App Header (icon + meta)
                     HStack(alignment: .top, spacing: 16) {
                         ZStack {
                             RoundedRectangle(cornerRadius: 12)
@@ -152,7 +157,7 @@ public struct AppDetailView: View {
                         }
                     }
 
-                    // Screenshots (from general app)
+                    // Screenshots
                     if let screenshots = app.screenshotURLs, !screenshots.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 12) {
@@ -189,21 +194,21 @@ public struct AppDetailView: View {
                         }
                     }
 
-                    Spacer(minLength: 80) // Space for the progress bar
+                    Spacer(minLength: 80) // space for progress bar
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
             }
-            
-            // Floating Download Button
+
+            // Floating Install button
             if !downloadManager.isProcessing {
                 VStack {
                     Spacer()
                     HStack {
                         Spacer()
                         Button(action: {
-                            // CHECK: show error immediately if no cert selected
-                            if downloadManager.selectedCertificate == nil {
+                            // Immediate certificate check from CertificatesManager
+                            if certificatesManager.selectedCertificate == nil {
                                 showCertError = true
                                 return
                             }
@@ -221,25 +226,27 @@ public struct AppDetailView: View {
                             .cornerRadius(25)
                             .shadow(radius: 5)
                         }
+                        .disabled(certificatesManager.selectedCertificate == nil)
+                        .opacity(certificatesManager.selectedCertificate == nil ? 0.6 : 1.0)
                         .padding(.trailing, 20)
                         .padding(.bottom, 20)
                     }
                 }
             }
-            
-            // Progress Bar (fixed at bottom, not part of scroll)
+
+            // Progress Bar (fixed at bottom)
             if downloadManager.isProcessing {
                 VStack(spacing: 0) {
                     Rectangle()
                         .fill(Color.gray.opacity(0.1))
                         .frame(height: 1)
-                    
+
                     VStack(spacing: 8) {
                         HStack {
                             ProgressView(value: downloadManager.progress, total: 1.0)
                                 .progressViewStyle(LinearProgressViewStyle(tint: downloadManager.showSuccess ? .green : .blue))
                                 .scaleEffect(x: 1, y: 1.5, anchor: .center)
-                            
+
                             if downloadManager.showSuccess {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.green)
@@ -251,16 +258,16 @@ public struct AppDetailView: View {
                                     .frame(width: 40)
                             }
                         }
-                        
+
                         HStack {
                             Text(downloadManager.status)
                                 .font(.caption)
                                 .foregroundColor(downloadManager.showSuccess ? .green : .secondary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
-                            
+
                             Spacer()
-                            
+
                             if !downloadManager.showSuccess {
                                 Button("Cancel") {
                                     downloadManager.cancel()
@@ -288,8 +295,7 @@ public struct AppDetailView: View {
                     .foregroundColor(.red)
                 } else if app.downloadURL != nil {
                     Button(action: {
-                        // Also check here if you want consistent behaviour
-                        if downloadManager.selectedCertificate == nil {
+                        if certificatesManager.selectedCertificate == nil {
                             showCertError = true
                             return
                         }
@@ -300,10 +306,11 @@ public struct AppDetailView: View {
                             Text("Download")
                         }
                     }
+                    .disabled(certificatesManager.selectedCertificate == nil)
+                    .opacity(certificatesManager.selectedCertificate == nil ? 0.6 : 1.0)
                 }
             }
         }
-        // ALERT: shown immediately when no certificate selected
         .alert("Please select a certificate first!", isPresented: $showCertError) {
             Button("OK", role: .cancel) { }
         }
