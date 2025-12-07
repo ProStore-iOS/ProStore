@@ -762,8 +762,8 @@ public func installApp(from ipaURL: URL) throws {
                 }
             } else {
                 // Try with common passwords if empty password fails
-                InstallLogger.shared.log("Trying common passwords for PKCS12 file...")
-                let commonPasswords = ["password", "123456", "admin", "localhost", "ssl", "cert", "prostore"]
+                InstallLogger.shared.log("Trying password for PKCS12 file...")
+                let commonPasswords = ["ProStore"]
                 var foundPassword = false
                 
                 for password in commonPasswords {

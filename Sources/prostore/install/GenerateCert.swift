@@ -60,8 +60,8 @@ public final class GenerateCert {
         try writePrivateKeyPEM(pkey: serverPkey, to: serverKeyURL.path)
         try writeX509PEM(x509: serverX509, to: serverCertURL.path)
        
-        // Try with empty password first, which is what installApp.swift expects
-        try writePKCS12(pkey: serverPkey, cert: serverX509, caCert: caX509, to: localhostP12URL.path, password: "")
+        // Try with password 'ProStore' first, which is what installApp.swift expects
+        try writePKCS12(pkey: serverPkey, cert: serverX509, caCert: caX509, to: localhostP12URL.path, password: "ProStore")
        
         EVP_PKEY_free(caPkey)
         X509_free(caX509)
