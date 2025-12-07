@@ -69,10 +69,11 @@ struct SetupView: View {
 
                 Button(currentPage == pages.count - 1 ? "Finish" : "Next") {
                     withAnimation {
-                        if pages[currentPage].title == "Install ProStore Shortcut",
-                           let shortcutURL = URL(string: "https://raw.githubusercontent.com/ProStore-iOS/files/refs/heads/main/Turn%20on%20VPN.shortcut") {
-                            UIApplication.shared.open(shortcutURL)
-                        }
+if pages[currentPage].title == "Install ProStore Shortcut",
+   let rawURL = "https://raw.githubusercontent.com/ProStore-iOS/files/refs/heads/main/Turn%20on%20VPN.shortcut".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+   let shortcutURL = URL(string: "shortcuts://import-shortcut?url=\(rawURL)") {
+    UIApplication.shared.open(shortcutURL)
+}
 
                         if currentPage < pages.count - 1 {
                             currentPage += 1
@@ -96,4 +97,5 @@ struct SetupPage {
     let title: String
     let subtitle: String
     let imageName: String
+
 }
