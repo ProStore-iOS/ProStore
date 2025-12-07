@@ -177,7 +177,7 @@ private func signIPA(ipaURL: URL, p12URL: URL, provURL: URL, password: String, a
                 switch result {
                 case .success(let signedIPAURL):
                     self?.progress = 1.0
-                    self?.status = "✅ Successfully signed!"
+                    self?.status = "✅ Successfully signed ipa! Installing app now..."
                     self?.showSuccess = true
                     
                     do {
