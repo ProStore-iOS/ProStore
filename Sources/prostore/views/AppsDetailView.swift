@@ -5,6 +5,7 @@ import Foundation
 public struct AppDetailView: View {
     let app: AltApp
     @StateObject private var downloadManager = DownloadSignManager()
+    @State private var showCertError = false
     @Environment(\.dismiss) private var dismiss
     
     private var latestVersion: AppVersion? {
@@ -199,6 +200,10 @@ public struct AppDetailView: View {
                     HStack {
                         Spacer()
                         Button(action: {
+                            if downloadManager.selectedCertificate == nil {
+                                showCertError = true
+                                return
+                            }
                             downloadManager.downloadAndSign(app: app)
                         }) {
                             HStack {
