@@ -319,34 +319,26 @@ public final class GenerateCert {
     
     // Simpler version that doesn't use deprecated stack functions
 private static func addSubjectAltName_IP(cert: OpaquePointer, ip: String) throws {
-    guard let conf = NCONF_new(nil) else {
-        throw CertGenError.sanCreationFailed("NCONF_new failed")
-    }
-    defer { NCONF_free(conf) }
-
-    // Create a minimal conf with just the SAN section
-    let confString = """
-    [san]
-    IP.1 = \(ip)
-    """
-    if NCONF_load_bio(conf, BIO_new_mem_buf(confString, -1), nil) <= 0 {
-        throw CertGenError.sanCreationFailed("NCONF_load_bio failed")
-    }
-
-    var ctx: OpaquePointer?
+    let sanString = "IP:\(ip)"
+    let cSanString = sanString.cString(using: .utf8)!
+    
+    var ctx = X509V3_CTX()
     X509V3_set_ctx(&ctx, cert, cert, nil, nil, 0)
-    X509V3_set_nconf(ctx, conf)
-
-    guard let ext = X509V3_EXT_nconf_nid(nil, ctx, NID_subject_alt_name, "san") else {
+    X509V3_set_nconf(&ctx, nil)
+    
+    guard let ext = X509V3_EXT_nconf_nid(nil, &ctx, NID_subject_alt_name, cSanString) else {
         let err = ERR_get_error()
         let reason = ERR_reason_error_string(err)
-        throw CertGenError.sanCreationFailed("X509V3_EXT_nconf_nid failed: \(reason ?? "unknown")")
+        let reasonStr = reason != nil ? String(cString: reason!) : "unknown"
+        throw CertGenError.sanCreationFailed("SAN failed: \(reasonStr)")
     }
     defer { X509_EXTENSION_free(ext) }
-
+    
     guard X509_add_ext(cert, ext, -1) != 0 else {
         throw CertGenError.sanCreationFailed("X509_add_ext failed")
     }
+    
+    InstallLogger.shared.logSuccess("SAN extension added: IP:\(ip)")
 }
     
     private static func writePrivateKeyPEM(pkey: OpaquePointer?, to path: String) throws {
