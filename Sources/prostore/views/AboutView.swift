@@ -25,7 +25,7 @@ struct AboutView: View {
         ),
         Credit(
             name: "Khcrysalis",
-            role: "Zsign-Package (fork)",
+            role: "Zsign-Package (fork) & iDeviceKit",
             profileURL: URL(string: "https://github.com/khcrysalis")!,
             avatarURL: URL(string: "https://github.com/khcrysalis.png")!
         ),
