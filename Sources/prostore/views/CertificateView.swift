@@ -488,10 +488,8 @@ struct AddCertificateView: View {
                 switch checkResult {
                 case .success(.success):
                     if localDisplayName.isEmpty {
-                        let manager = CertificatesManager()
-                        localDisplayName = manager.getCertificateName(mobileProvisionData: provData) ?? "Custom Certificate"
+                        localDisplayName = CertificatesManager.shared.getCertificateName(mobileProvisionData: provData) ?? "Custom Certificate"
                     }
-             
                     if let folder = self.editingCertificate?.folderName {
                         try CertificateFileManager.shared.updateCertificate(folderName: folder, p12Data: p12Data, provData: provData, password: self.password, displayName: localDisplayName)
                     } else {
@@ -524,4 +522,5 @@ struct AddCertificateView: View {
         DispatchQueue.global(qos: .userInitiated).async(execute: workItem)
     }
 }
+
 
