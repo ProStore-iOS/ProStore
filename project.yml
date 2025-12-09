@@ -11,6 +11,9 @@ packages:
     url: https://github.com/khcrysalis/Zsign-Package.git
     branch: package
   ZIPFoundation:
+    url: https://github.com/ProStore-iOS/IDeviceKit.git
+    branch: main
+  IDeviceKit:
     url: https://github.com/weichsel/ZIPFoundation.git
     branch: main
   OpenSSL:
@@ -53,4 +56,5 @@ targets:
         product: ZIPFoundation
       - package: OpenSSL
         product: OpenSSL
-
+      - package: IDeviceKit
+        product: IDeviceSwift
