@@ -15,7 +15,7 @@ struct SetupView: View {
         ),
         SetupPage(
             title: "Install ProStore Shortcut",
-            subtitle: "Please install the shorcut below.",
+            subtitle: "Please install the shortcut below.",
             imageName: "shortcut"
         ),
         SetupPage(
@@ -67,35 +67,36 @@ struct SetupView: View {
 
                 Spacer()
 
-Button(currentPage == pages.count - 1 ? "Finish" : "Next") {
-    withAnimation {
-        if pages[currentPage].title == "Install ProStore Shortcut" {
-            // The raw GitHub URL (no extra encoding here).
-            let rawURLString = "https://raw.githubusercontent.com/ProStore-iOS/files/refs/heads/main/Turn on VPN.shortcut"
-            
-            // Build the shortcuts URL safely via URLComponents so the `url` query item is percent-encoded correctly.
-            if var components = URLComponents(string: "shortcuts://import-shortcut") {
-                components.queryItems = [
-                    URLQueryItem(name: "url", value: rawURLString)
-                ]
-                
-                if let shortcutURL = components.url {
-                    UIApplication.shared.open(shortcutURL)
-                } else {
-                    // fallback or debug
-                    print("Failed to build shortcuts URL")
+                Button(currentPage == pages.count - 1 ? "Finish" : "Next") {
+                    withAnimation {
+
+                        // MARK: - Shortcut install step
+                        if pages[currentPage].title == "Install ProStore Shortcut" {
+
+                            // Raw GitHub URL — DO NOT manually encode it
+                            let rawURL = "https://raw.githubusercontent.com/ProStore-iOS/files/refs/heads/main/Turn on VPN.shortcut"
+
+                            if var components = URLComponents(string: "shortcuts://import-shortcut") {
+                                components.queryItems = [
+                                    URLQueryItem(name: "url", value: rawURL)
+                                ]
+
+                                if let shortcutURL = components.url {
+                                    UIApplication.shared.open(shortcutURL)
+                                } else {
+                                    print("⚠️ Failed to build import URL")
+                                }
+                            }
+                        }
+
+                        // Continue navigation
+                        if currentPage < pages.count - 1 {
+                            currentPage += 1
+                        } else {
+                            onComplete()
+                        }
+                    }
                 }
-            }
-        }
-
-        if currentPage < pages.count - 1 {
-            currentPage += 1
-        } else {
-            onComplete()
-        }
-    }
-}
-
                 .buttonStyle(.borderedProminent)
             }
             .padding(.horizontal)
@@ -111,6 +112,4 @@ struct SetupPage {
     let title: String
     let subtitle: String
     let imageName: String
-
 }
-
