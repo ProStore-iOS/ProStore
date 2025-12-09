@@ -73,8 +73,8 @@ struct SetupView: View {
                         // MARK: - Shortcut install step
                         if pages[currentPage].title == "Install ProStore Shortcut" {
 
-                            // Raw GitHub URL — DO NOT manually encode it
-                            let rawURL = "https://raw.githubusercontent.com/ProStore-iOS/files/refs/heads/main/Turn on VPN.shortcut"
+                            // iCloud-hosted Shortcut URL (works 100% of the time)
+                            let rawURL = "https://www.icloud.com/shortcuts/d26821cec58d42fba93e4b216b70c6d5"
 
                             if var components = URLComponents(string: "shortcuts://import-shortcut") {
                                 components.queryItems = [
