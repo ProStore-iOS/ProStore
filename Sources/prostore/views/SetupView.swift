@@ -67,21 +67,35 @@ struct SetupView: View {
 
                 Spacer()
 
-                Button(currentPage == pages.count - 1 ? "Finish" : "Next") {
-                    withAnimation {
-if pages[currentPage].title == "Install ProStore Shortcut",
-   let rawURL = "https://raw.githubusercontent.com/ProStore-iOS/files/refs/heads/main/Turn%20on%20VPN.shortcut".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-   let shortcutURL = URL(string: "shortcuts://import-shortcut?url=\(rawURL)") {
-    UIApplication.shared.open(shortcutURL)
+Button(currentPage == pages.count - 1 ? "Finish" : "Next") {
+    withAnimation {
+        if pages[currentPage].title == "Install ProStore Shortcut" {
+            // The raw GitHub URL (no extra encoding here).
+            let rawURLString = "https://raw.githubusercontent.com/ProStore-iOS/files/refs/heads/main/Turn on VPN.shortcut"
+            
+            // Build the shortcuts URL safely via URLComponents so the `url` query item is percent-encoded correctly.
+            if var components = URLComponents(string: "shortcuts://import-shortcut") {
+                components.queryItems = [
+                    URLQueryItem(name: "url", value: rawURLString)
+                ]
+                
+                if let shortcutURL = components.url {
+                    UIApplication.shared.open(shortcutURL)
+                } else {
+                    // fallback or debug
+                    print("Failed to build shortcuts URL")
+                }
+            }
+        }
+
+        if currentPage < pages.count - 1 {
+            currentPage += 1
+        } else {
+            onComplete()
+        }
+    }
 }
 
-                        if currentPage < pages.count - 1 {
-                            currentPage += 1
-                        } else {
-                            onComplete()
-                        }
-                    }
-                }
                 .buttonStyle(.borderedProminent)
             }
             .padding(.horizontal)
@@ -99,3 +113,4 @@ struct SetupPage {
     let imageName: String
 
 }
+
