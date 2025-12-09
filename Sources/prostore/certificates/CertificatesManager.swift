@@ -146,10 +146,11 @@ public final class CertificatesManager: ObservableObject {
             return .failure(CertificateError.identityExtractionFailed)
         }
 
-        // Attempt to cast to SecIdentity
-        guard let identity = identityAny as? SecIdentity else {
-            return .failure(CertificateError.identityExtractionFailed)
-        }
+// Verify CFTypeID is SecIdentity, then force-cast
+guard CFGetTypeID(identityAny as CFTypeRef) == SecIdentityGetTypeID() else {
+    return .failure(CertificateError.identityExtractionFailed)
+}
+let identity = identityAny as! SecIdentity
 
         var certRef: SecCertificate?
         let certStatus = SecIdentityCopyCertificate(identity, &certRef)
@@ -184,3 +185,4 @@ public final class CertificatesManager: ObservableObject {
         }
     }
 }
+
