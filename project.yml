@@ -36,8 +36,8 @@ targets:
       properties:
         CFBundleDisplayName: "ProStore"
         CFBundleName: "prostore"
-        CFBundleVersion: "48"
-        CFBundleShortVersionString: "0.12.0d3"
+        CFBundleVersion: "49"
+        CFBundleShortVersionString: "0.12.0d4"
         UILaunchStoryboardName: "LaunchScreen"
         NSPrincipalClass: "UIApplication"
         NSAppTransportSecurity:
@@ -58,3 +58,4 @@ targets:
         product: OpenSSL
       - package: IDeviceKit
         product: IDeviceSwift
+
