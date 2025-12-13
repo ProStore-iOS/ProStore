@@ -192,7 +192,7 @@ private func signAndInstallIPA(
 
                 // Create a view model for installation progress
 // Create a view model for installation progress
-let installerViewModel = InstallerStatusViewModel()
+let installerViewModel = InstallerViewModel()
 
 Task {
     do {
@@ -209,9 +209,9 @@ Task {
                     self.progress = Double(percent) / 100.0
                     self.status = status.pretty
                 case .success:
-                    self.status = InstallerStatusViewModel.InstallerStatus.success.pretty
+                    self.status = InstallerViewModel.InstallerStatus.success.pretty
                 case .failure(let message):
-                    self.status = InstallerStatusViewModel.InstallerStatus.failure(message: message).pretty
+                    self.status = InstallerViewModel.InstallerStatus.failure(message: message).pretty
                 case .message(let text):
                     self.status = text
                 }
