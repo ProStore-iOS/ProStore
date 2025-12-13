@@ -68,7 +68,7 @@ class DownloadSignManager: ObservableObject {
                 }
                 
                 // Step 4: Sign the IPA
-                self.signIPA(ipaURL: tempIPAURL, p12URL: p12URL, provURL: provURL, password: password, appName: appName)
+                self.signAndInstallIPA(ipaURL: tempIPAURL, p12URL: p12URL, provURL: provURL, password: password, appName: appName)
                 
             case .failure(let error):
                 DispatchQueue.main.async {
@@ -187,7 +187,7 @@ private func signAndInstallIPA(ipaURL: URL, p12URL: URL, provURL: URL, password:
                 Task {
                     do {
                         // Show install status while installing
-                        try await self.installAppWithStatus(from: signedIPAURL)
+                        try await installAppWithStatus(from: signedIPAURL)
                         
                         // Hide the bar 3 seconds AFTER install is complete
                         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {

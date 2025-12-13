@@ -1,3 +1,4 @@
+import Foundation
 import Combine
 
 public func installAppWithStatus(from ipaURL: URL) async throws {
