@@ -1,7 +1,7 @@
 import Foundation
 import IDeviceSwift
 
-public async func installApp(from ipaURL: URL) throws {
+public func installApp(from ipaURL: URL) async throws {
     print("Installing app from \(ipaURL.path)...")
 
     // Heartbeat

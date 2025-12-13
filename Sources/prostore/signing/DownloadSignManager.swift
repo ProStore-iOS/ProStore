@@ -173,6 +173,7 @@ private func signIPA(ipaURL: URL, p12URL: URL, provURL: URL, password: String, a
             }
         },
         completion: { [weak self] result in
+        Task {
             DispatchQueue.main.async {
                 switch result {
                 case .success(let signedIPAURL):
@@ -181,7 +182,7 @@ private func signIPA(ipaURL: URL, p12URL: URL, provURL: URL, password: String, a
                     self?.showSuccess = true
                     
                     do {
-                        try installApp(from: signedIPAURL)
+                        try await installApp(from: signedIPAURL)
                     } catch {
                         self?.status = "❌ Install failed: \(error.localizedDescription)"
                     }
@@ -202,6 +203,7 @@ private func signIPA(ipaURL: URL, p12URL: URL, provURL: URL, password: String, a
                     try? FileManager.default.removeItem(at: ipaURL)
                 }
             }
+        }
         }
     )
 }
