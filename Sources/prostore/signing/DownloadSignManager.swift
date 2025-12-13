@@ -191,45 +191,47 @@ private func signAndInstallIPA(
                 }
 
                 // Create a view model for installation progress
-                let installerViewModel = InstallerStatusViewModel()
+// Create a view model for installation progress
+let installerViewModel = InstallerStatusViewModel()
 
-                Task {
-                    do {
-                        // Install with status updates using the viewModel
-                        try await installAppWithStatus(from: signedIPAURL, viewModel: installerViewModel)
+Task {
+    do {
+        try await installAppWithStatus(from: signedIPAURL, viewModel: installerViewModel)
 
-                        // Observe the viewModel status to update your UI
-                        installerViewModel.$status
-                            .receive(on: DispatchQueue.main)
-                            .sink { status in
-                                switch status {
-                                case .idle: break
-                                case .uploading(let percent), .installing(let percent):
-                                    self.progress = Double(percent) / 100.0
-                                    self.status = "\(status)"
-                                case .success:
-                                    self.status = "✅ Installation complete!"
-                                case .failure(let error):
-                                    self.status = "❌ Install failed: \(error)"
-                                }
-                            }
-                            .store(in: &self.cancellables)
-
-                        // Hide the bar 3 seconds after install is complete
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                            self.isProcessing = false
-                            self.showSuccess = false
-                            self.progress = 0.0
-                            self.status = ""
-                        }
-
-                    } catch {
-                        DispatchQueue.main.async {
-                            self.status = "❌ Install failed: \(error.localizedDescription)"
-                            self.isProcessing = false
-                        }
-                    }
+        // Observe the viewModel status to update your UI
+        installerViewModel.$status
+            .receive(on: DispatchQueue.main)
+            .sink { status in
+                switch status {
+                case .idle:
+                    break
+                case .uploading(let percent), .installing(let percent):
+                    self.progress = Double(percent) / 100.0
+                    self.status = status.pretty
+                case .success:
+                    self.status = InstallerStatusViewModel.InstallerStatus.success.pretty
+                case .failure(let message):
+                    self.status = InstallerStatusViewModel.InstallerStatus.failure(message: message).pretty
+                case .message(let text):
+                    self.status = text
                 }
+            }
+            .store(in: &self.cancellables)
+
+        // Hide the bar 3 seconds after install is complete
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            self.isProcessing = false
+            self.showSuccess = false
+            self.progress = 0.0
+            self.status = ""
+        }
+    } catch {
+        DispatchQueue.main.async {
+            self.status = "❌ Install failed: \(error.localizedDescription)"
+            self.isProcessing = false
+        }
+    }
+}
 
                 // Clean up original downloaded IPA
                 try? FileManager.default.removeItem(at: ipaURL)
