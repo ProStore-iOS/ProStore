@@ -56,7 +56,7 @@ public final class CertificatesManager: ObservableObject {
             return nil
         }
 
-        return identityAny as? SecIdentity
+        return identityAny as! SecIdentity
     }
 
     // MARK: - SHA256 hex
@@ -72,7 +72,7 @@ public final class CertificatesManager: ObservableObject {
         }
         var error: Unmanaged<CFError>?
         guard let data = SecKeyCopyExternalRepresentation(secKey, &error) as Data? else {
-            let code = error?.takeRetainedValue().map { CFErrorGetCode($0) as OSStatus } ?? -1
+            let code = error.map { OSStatus(CFErrorGetCode($0.takeRetainedValue())) } ?? -1
             throw CertificateError.publicKeyExportFailed(code)
         }
         return data

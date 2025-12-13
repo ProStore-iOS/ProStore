@@ -112,9 +112,7 @@ final class DownloadSignManager: ObservableObject, @unchecked Sendable {
         self.downloadTask = task
         task.resume()
 
-        // Clean up observation when task finishes
-        task.progress.addObserver(NSObject(), forKeyPath: "fractionCompleted", options: [], context: nil)
-        observation.invalidateOnDeallocate(task.progress)
+        // Clean up observation when task finishes (invalidate manually in completion if needed)
     }
 
     private func getCertificateFiles(for folderName: String) -> (p12URL: URL, provURL: URL, password: String)? {
@@ -158,7 +156,7 @@ final class DownloadSignManager: ObservableObject, @unchecked Sendable {
                 Task { @MainActor in
                     guard let self else { return }
 
-                    switch result => {
+                    switch result {
                     case .success(let signedIPAURL):
                         self.progress = 1.0
                         self.status = "Signed! Installing..."
