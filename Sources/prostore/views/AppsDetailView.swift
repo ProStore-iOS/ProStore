@@ -208,7 +208,7 @@ public struct AppDetailView: View {
                         Spacer()
                         Button(action: {
                             // Immediate certificate check from CertificatesManager
-                            if certificatesManager.selectedCertificate == nil {
+                            if certificatesManager.selectedIdentity == nil {
                                 showCertError = true
                                 return
                             }
@@ -226,8 +226,8 @@ public struct AppDetailView: View {
                             .cornerRadius(25)
                             .shadow(radius: 5)
                         }
-                        .disabled(certificatesManager.selectedCertificate == nil)
-                        .opacity(certificatesManager.selectedCertificate == nil ? 0.6 : 1.0)
+                        .disabled(certificatesManager.selectedIdentity == nil)
+                        .opacity(certificatesManager.selectedIdentity == nil ? 0.6 : 1.0)
                         .padding(.trailing, 20)
                         .padding(.bottom, 20)
                     }
@@ -295,7 +295,7 @@ public struct AppDetailView: View {
                     .foregroundColor(.red)
                 } else if app.downloadURL != nil {
                     Button(action: {
-                        if certificatesManager.selectedCertificate == nil {
+                        if certificatesManager.selectedIdentity == nil {
                             showCertError = true
                             return
                         }
@@ -306,9 +306,8 @@ public struct AppDetailView: View {
                             Text("Download")
                         }
                     }
-                    .disabled(certificatesManager.selectedCertificate == nil)
-                    .opacity(certificatesManager.selectedCertificate == nil ? 0.6 : 1.0)
-                }
+                    .disabled(certificatesManager.selectedIdentity == nil)
+                    .opacity(certificatesManager.selectedIdentity == nil ? 0.6 : 1.0)
             }
         }
         .alert("Please select a certificate first!", isPresented: $showCertError) {

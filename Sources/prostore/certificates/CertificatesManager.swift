@@ -26,8 +26,37 @@ public final class CertificatesManager: ObservableObject {
     public static let shared = CertificatesManager()
     private init() {}
 
-    // The currently selected certificate identity (nil if none chosen).
-    @Published public var selectedCertificate: SecIdentity? = nil
+    // REMOVED: @Published public var selectedCertificate: SecIdentity? = nil
+
+    /// Returns the currently selected SecIdentity by loading from the selected folder in UserDefaults
+    public var selectedIdentity: SecIdentity? {
+        guard let folderName = UserDefaults.standard.string(forKey: "selectedCertificateFolder"),
+              !folderName.isEmpty else {
+            return nil
+        }
+
+        let certDir = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(folderName)
+        let p12URL = certDir.appendingPathComponent("certificate.p12")
+        let pwURL = certDir.appendingPathComponent("password.txt")
+
+        guard let p12Data = try? Data(contentsOf: p12URL),
+              let password = try? String(contentsOf: pwURL, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return nil
+        }
+
+        var items: CFArray?
+        let options = [kSecImportExportPassphrase as String: password] as CFDictionary
+        let status = SecPKCS12Import(p12Data as CFData, options, &items)
+
+        guard status == errSecSuccess,
+              let cfItems = items as? [[String: Any]],
+              let identityAny = cfItems.first?[kSecImportItemIdentity as String],
+              CFGetTypeID(identityAny as CFTypeRef) == SecIdentityGetTypeID() else {
+            return nil
+        }
+
+        return identityAny as! SecIdentity
+    }
 
     // MARK: - Utility: SHA256 hex
     public static func sha256Hex(_ d: Data) -> String {
