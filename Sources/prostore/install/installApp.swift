@@ -1,38 +1,35 @@
 import Foundation
 import Combine
 
-public func installAppWithStatus(from ipaURL: URL) async throws {
-    let viewModel = InstallerStatusViewModel()
-    
-    // Connect Combine publishers to your UI
+public func installAppWithStatus(from ipaURL: URL, viewModel: InstallerStatusViewModel) async throws {
     var cancellables = Set<AnyCancellable>()
     
     viewModel.$uploadProgress
-        .sink { [weak self] progress in
+        .sink { progress in
             DispatchQueue.main.async {
-                self?.status = "📦 Uploading: \(Int(progress * 100))%"
-                self?.progress = 0.5 + (progress * 0.25) // optional fine-tune
+                viewModel.status = "📦 Uploading: \(Int(progress * 100))%"
+                viewModel.progress = 0.5 + (progress * 0.25)
             }
         }
         .store(in: &cancellables)
     
     viewModel.$installProgress
-        .sink { [weak self] progress in
+        .sink { progress in
             DispatchQueue.main.async {
-                self?.status = "📲 Installing: \(Int(progress * 100))%"
-                self?.progress = 0.75 + (progress * 0.25) // optional fine-tune
+                viewModel.status = "📲 Installing: \(Int(progress * 100))%"
+                viewModel.progress = 0.75 + (progress * 0.25)
             }
         }
         .store(in: &cancellables)
     
     viewModel.$status
-        .sink { [weak self] status in
+        .sink { status in
             DispatchQueue.main.async {
-                self?.status = status
+                viewModel.status = status
             }
         }
         .store(in: &cancellables)
-    
+
     let installer = InstallationProxy(viewModel: viewModel)
     try await installer.install(at: ipaURL)
 }
