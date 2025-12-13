@@ -2,9 +2,6 @@
 import Foundation
 import Combine
 
-// Import the signer module (assuming it exists)
-// If not, you'll need to define or import the signer
-
 class DownloadSignManager: ObservableObject {
     @Published var progress: Double = 0.0
     @Published var status: String = ""
@@ -15,7 +12,7 @@ class DownloadSignManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     
     // Assuming signer is available - you might need to import it
-    private let signer = Signer() // Adjust based on your actual signer class
+    private let signer = signer()
     
     func downloadAndSign(app: AltApp) {
         guard let downloadURL = app.downloadURL else {
@@ -268,3 +265,4 @@ class DownloadSignManager: ObservableObject {
         return appFolder
     }
 }
+
