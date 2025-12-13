@@ -153,10 +153,11 @@ class DownloadSignManager: ObservableObject {
         }
     }
     
-private func signIPA(ipaURL: URL, p12URL: URL, provURL: URL, password: String, appName: String) {
+private func signAndInstallIPA(ipaURL: URL, p12URL: URL, provURL: URL, password: String, appName: String) {
     DispatchQueue.main.async {
         self.status = "Starting signing process..."
         self.progress = 0.5
+        self.isProcessing = true
     }
     
     signer.sign(
@@ -173,34 +174,44 @@ private func signIPA(ipaURL: URL, p12URL: URL, provURL: URL, password: String, a
             }
         },
         completion: { [weak self] result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let signedIPAURL):
-                    self?.progress = 1.0
-                    self?.status = "✅ Successfully signed ipa! Installing app now..."
-                    self?.showSuccess = true
-                    
-                    Task {
-                        do {
-                            try await installApp(from: signedIPAURL)
-                        } catch {
-                            self?.status = "❌ Install failed: \(error.localizedDescription)"
+            guard let self else { return }
+            
+            switch result {
+            case .success(let signedIPAURL):
+                DispatchQueue.main.async {
+                    self.progress = 1.0
+                    self.status = "✅ Successfully signed IPA! Installing app now..."
+                    self.showSuccess = true
+                }
+                
+                Task {
+                    do {
+                        // Show install status while installing
+                        try await self.installAppWithStatus(from: signedIPAURL)
+                        
+                        // Hide the bar 3 seconds AFTER install is complete
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                            self.isProcessing = false
+                            self.showSuccess = false
+                            self.progress = 0.0
+                            self.status = ""
+                        }
+                        
+                    } catch {
+                        DispatchQueue.main.async {
+                            self.status = "❌ Install failed: \(error.localizedDescription)"
+                            self.isProcessing = false
                         }
                     }
-
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                        self?.isProcessing = false
-                        self?.showSuccess = false
-                        self?.progress = 0.0
-                        self?.status = ""
-                    }
-                    
-                    // Clean up original downloaded IPA
-                    try? FileManager.default.removeItem(at: ipaURL)
-                    
-                case .failure(let error):
-                    self?.status = "❌ Signing failed: \(error.localizedDescription)"
-                    self?.isProcessing = false
+                }
+                
+                // Clean up original downloaded IPA
+                try? FileManager.default.removeItem(at: ipaURL)
+                
+            case .failure(let error):
+                DispatchQueue.main.async {
+                    self.status = "❌ Signing failed: \(error.localizedDescription)"
+                    self.isProcessing = false
                     try? FileManager.default.removeItem(at: ipaURL)
                 }
             }

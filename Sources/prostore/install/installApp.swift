@@ -1,22 +1,37 @@
-// installApp.swift
-import Foundation
-import IDeviceSwift
+import Combine
 
-/// Installs a signed IPA on the device using InstallationProxy
-public func installApp(from ipaURL: URL) async throws {
-    print("Installing app from: \(ipaURL.path)")
-
-    // Start heartbeat to keep connection alive during long install
-    HeartbeatManager.shared.start()
-
-    // Create view model to receive installation status updates
+public func installAppWithStatus(from ipaURL: URL) async throws {
     let viewModel = InstallerStatusViewModel()
-
-    // Create the installation proxy
-    let installer = await InstallationProxy(viewModel: viewModel)
-
-    // Perform the actual installation
+    
+    // Connect Combine publishers to your UI
+    var cancellables = Set<AnyCancellable>()
+    
+    viewModel.$uploadProgress
+        .sink { [weak self] progress in
+            DispatchQueue.main.async {
+                self?.status = "📦 Uploading: \(Int(progress * 100))%"
+                self?.progress = 0.5 + (progress * 0.25) // optional fine-tune
+            }
+        }
+        .store(in: &cancellables)
+    
+    viewModel.$installProgress
+        .sink { [weak self] progress in
+            DispatchQueue.main.async {
+                self?.status = "📲 Installing: \(Int(progress * 100))%"
+                self?.progress = 0.75 + (progress * 0.25) // optional fine-tune
+            }
+        }
+        .store(in: &cancellables)
+    
+    viewModel.$status
+        .sink { [weak self] status in
+            DispatchQueue.main.async {
+                self?.status = status
+            }
+        }
+        .store(in: &cancellables)
+    
+    let installer = InstallationProxy(viewModel: viewModel)
     try await installer.install(at: ipaURL)
-
-    print("Installation completed successfully!")
 }
