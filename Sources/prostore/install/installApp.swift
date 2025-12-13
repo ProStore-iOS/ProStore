@@ -2,13 +2,6 @@ import Foundation
 import Combine
 import IDeviceSwift
 
-public class InstallerStatusViewModel: ObservableObject {
-    @Published public var uploadProgress: Double = 0.0
-    @Published public var installProgress: Double = 0.0
-    @Published public var status: String = ""
-    @Published public var progress: Double = 0.0
-}
-
 public func installAppWithStatus(from ipaURL: URL, viewModel: InstallerStatusViewModel) async throws {
     var cancellables = Set<AnyCancellable>()
     
