@@ -232,7 +232,7 @@ struct OfficialCertificatesView: View {
                 switch checkResult {
                 case .success(.success):
                     let exp = signer.getExpirationDate(provData: provDataLocal)
-                    let dispName = CertificatesManager.shared.getCertificateName(mobileProvisionData: provDataLocal) ?? item.path
+                    let dispName = CertificatesManager.getCertificateName(mobileProvisionData: provDataLocal) ?? item.path
                     await MainActor.run {
                         self.p12Data = p12DataLocal
                         self.provData = provDataLocal

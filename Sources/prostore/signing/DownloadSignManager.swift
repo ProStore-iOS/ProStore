@@ -180,10 +180,12 @@ private func signIPA(ipaURL: URL, p12URL: URL, provURL: URL, password: String, a
                     self?.status = "✅ Successfully signed ipa! Installing app now..."
                     self?.showSuccess = true
                     
-                    do {
-                        try installApp(from: signedIPAURL)
-                    } catch {
-                        self?.status = "❌ Install failed: \(error.localizedDescription)"
+                    Task {
+                        do {
+                            try await installApp(from: signedIPAURL)
+                        } catch {
+                            self?.status = "❌ Install failed: \(error.localizedDescription)"
+                        }
                     }
 
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
