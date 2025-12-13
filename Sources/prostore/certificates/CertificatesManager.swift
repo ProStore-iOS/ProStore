@@ -55,9 +55,7 @@ public final class CertificatesManager: ObservableObject {
             return nil
         }
 
-        guard let identity = identityAny as? SecIdentity else {
-            return nil
-        }
+        let identity = identityAny as! SecIdentity
         return identity
     }
 
@@ -144,9 +142,7 @@ public final class CertificatesManager: ObservableObject {
             return .failure(CertificateError.p12ImportFailed(status))
         }
 
-        guard let identity = identityAny as? SecIdentity else {
-            return .failure(CertificateError.identityExtractionFailed)
-        }
+        let identity = identityAny as! SecIdentity
 
         var certRef: SecCertificate?
         guard SecIdentityCopyCertificate(identity, &certRef) == errSecSuccess,
