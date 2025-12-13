@@ -1,4 +1,3 @@
-// CertificatesManager.swift
 import Foundation
 import Security
 import CryptoKit
@@ -56,7 +55,10 @@ public final class CertificatesManager: ObservableObject {
             return nil
         }
 
-        return identityAny as! SecIdentity
+        guard let identity = identityAny as? SecIdentity else {
+            return nil
+        }
+        return identity
     }
 
     // MARK: - SHA256 hex
@@ -138,9 +140,12 @@ public final class CertificatesManager: ObservableObject {
         guard status == errSecSuccess,
               let itemsArray = items as? [[String: Any]],
               let identityAny = itemsArray.first?[kSecImportItemIdentity as String],
-              CFGetTypeID(identityAny as CFTypeRef) == SecIdentityGetTypeID(),
-              let identity = identityAny as? SecIdentity else {
+              CFGetTypeID(identityAny as CFTypeRef) == SecIdentityGetTypeID() else {
             return .failure(CertificateError.p12ImportFailed(status))
+        }
+
+        guard let identity = identityAny as? SecIdentity else {
+            return .failure(CertificateError.identityExtractionFailed)
         }
 
         var certRef: SecCertificate?

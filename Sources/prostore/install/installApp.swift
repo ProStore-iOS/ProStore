@@ -13,8 +13,7 @@ public func installApp(from ipaURL: URL) async throws {
     let viewModel = InstallerStatusViewModel()
 
     // Create the installation proxy
-    // Note: InstallationProxy(viewModel:) initializer is NOT async in current IDeviceSwift versions
-    let installer = InstallationProxy(viewModel: viewModel)
+    let installer = await InstallationProxy(viewModel: viewModel)
 
     // Perform the actual installation
     try await installer.install(at: ipaURL)

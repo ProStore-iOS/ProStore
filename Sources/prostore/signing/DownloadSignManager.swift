@@ -77,7 +77,7 @@ final class DownloadSignManager: ObservableObject, @unchecked Sendable {
     }
 
     private func downloadIPA(from url: URL, to destination: URL, completion: @escaping (Result<Void, Error>) -> Void) {
-        let task = URLSession.shared.downloadTask(with: url) { [weak self] tempURL, _, error in
+        let task = URLSession.shared.downloadTask(with: url) { tempURL, _, error in
             if let error {
                 completion(.failure(error))
                 return
@@ -101,7 +101,7 @@ final class DownloadSignManager: ObservableObject, @unchecked Sendable {
         }
 
         // Progress observation
-        let observation = task.progress.observe(\.fractionCompleted) { [weak self] progress, _ in
+        _ = task.progress.observe(\.fractionCompleted) { [weak self] progress, _ in
             let downloadProgress = progress.fractionCompleted * 0.5
             DispatchQueue.main.async {
                 self?.progress = downloadProgress
@@ -111,8 +111,6 @@ final class DownloadSignManager: ObservableObject, @unchecked Sendable {
 
         self.downloadTask = task
         task.resume()
-
-        // Clean up observation when task finishes (invalidate manually in completion if needed)
     }
 
     private func getCertificateFiles(for folderName: String) -> (p12URL: URL, provURL: URL, password: String)? {
