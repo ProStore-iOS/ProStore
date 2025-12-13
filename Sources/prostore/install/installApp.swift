@@ -1,9 +1,44 @@
-// installAppStream.swift
+// installApp.swift
 import Foundation
 import Combine
 import IDeviceSwift
 
-public func installAppWithStatusStream(from ipaURL: URL) -> AsyncThrowingStream<InstallerStatusViewModel.InstallerStatus, Error> {
+// First, let's define the correct InstallerStatus enum if it doesn't exist elsewhere
+public enum InstallerStatus {
+    case idle
+    case uploading(percent: Int)
+    case installing(percent: Int)
+    case success
+    case failure(message: String)
+    case message(String)
+    
+    public var pretty: String {
+        switch self {
+        case .idle:
+            return "Idle"
+        case .uploading(let percent):
+            return "Uploading... (\(percent)%)"
+        case .installing(let percent):
+            return "Installing... (\(percent)%)"
+        case .success:
+            return "✅ Success!"
+        case .failure(let message):
+            return "❌ \(message)"
+        case .message(let text):
+            return text
+        }
+    }
+}
+
+// InstallerStatusViewModel with the correct enum
+public class InstallerStatusViewModel: ObservableObject {
+    @Published public var status: InstallerStatus = .idle
+    @Published public var uploadProgress: Double = 0.0
+    @Published public var installProgress: Double = 0.0
+    // ... other properties as needed
+}
+
+public func installAppWithStatusStream(from ipaURL: URL) -> AsyncThrowingStream<InstallerStatus, Error> {
     AsyncThrowingStream { continuation in
         // create a local view model for the InstallationProxy internals
         let localVM = InstallerStatusViewModel()
