@@ -173,37 +173,33 @@ private func signIPA(ipaURL: URL, p12URL: URL, provURL: URL, password: String, a
             }
         },
         completion: { [weak self] result in
-        Task {
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let signedIPAURL):
-                    self?.progress = 1.0
-                    self?.status = "✅ Successfully signed ipa! Installing app now..."
-                    self?.showSuccess = true
-                    
-                    do {
-                        try await installApp(from: signedIPAURL)
-                    } catch {
-                        self?.status = "❌ Install failed: \(error.localizedDescription)"
-                    }
+Task { @MainActor in
+    switch result {
+    case .success(let signedIPAURL):
+        self?.progress = 1.0
+        self?.status = "✅ Successfully signed ipa! Installing app now..."
+        self?.showSuccess = true
 
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                        self?.isProcessing = false
-                        self?.showSuccess = false
-                        self?.progress = 0.0
-                        self?.status = ""
-                    }
-                    
-                    // Clean up original downloaded IPA
-                    try? FileManager.default.removeItem(at: ipaURL)
-                    
-                case .failure(let error):
-                    self?.status = "❌ Signing failed: \(error.localizedDescription)"
-                    self?.isProcessing = false
-                    try? FileManager.default.removeItem(at: ipaURL)
-                }
-            }
+        do {
+            try await installApp(from: signedIPAURL)
+        } catch {
+            self?.status = "❌ Install failed: \(error.localizedDescription)"
         }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            self?.isProcessing = false
+            self?.showSuccess = false
+            self?.progress = 0.0
+            self?.status = ""
+        }
+
+        try? FileManager.default.removeItem(at: ipaURL)
+    case .failure(let error):
+        self?.status = "❌ Signing failed: \(error.localizedDescription)"
+        self?.isProcessing = false
+        try? FileManager.default.removeItem(at: ipaURL)
+    }
+}
         }
     )
 }
