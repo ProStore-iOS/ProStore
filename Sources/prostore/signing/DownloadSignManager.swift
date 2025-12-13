@@ -2,15 +2,14 @@
 import Foundation
 import Combine
 
-class DownloadSignManager: ObservableObject {
+final class DownloadSignManager: ObservableObject, @unchecked Sendable {
+    @Published var isProcessing = false
     @Published var progress: Double = 0.0
     @Published var status: String = ""
-    @Published var isProcessing: Bool = false
-    @Published var showSuccess: Bool = false
-    
-    private var downloadTask: URLSessionDownloadTask?
+    @Published var showSuccess = false
+
     private var cancellables = Set<AnyCancellable>()
-    
+
     func downloadAndSign(app: AltApp) {
         guard let downloadURL = app.downloadURL else {
             self.status = "No download URL available"

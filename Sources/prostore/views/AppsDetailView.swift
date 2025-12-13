@@ -5,10 +5,7 @@ import Foundation
 public struct AppDetailView: View {
     let app: AltApp
 
-    // Manager that controls download/sign flow (your existing class)
     @StateObject private var downloadManager = DownloadSignManager()
-
-    // Read certificate selection from the shared CertificatesManager
     @ObservedObject private var certificatesManager = CertificatesManager.shared
 
     @Environment(\.dismiss) private var dismiss
@@ -25,7 +22,8 @@ public struct AppDetailView: View {
     }
 
     private func formatDate(_ dateString: String?) -> String {
-        guard let dateString = dateString, let date = ISO8601DateFormatter().date(from: dateString) else {
+        guard let dateString = dateString,
+              let date = ISO8601DateFormatter().date(from: dateString) else {
             return "Unknown"
         }
         let formatter = DateFormatter()
@@ -37,8 +35,7 @@ public struct AppDetailView: View {
         ZStack(alignment: .bottom) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-
-                    // App Header (icon + meta)
+                    // App Header
                     HStack(alignment: .top, spacing: 16) {
                         ZStack {
                             RoundedRectangle(cornerRadius: 12)
@@ -72,12 +69,13 @@ public struct AppDetailView: View {
                             } else {
                                 Image(systemName: "app")
                                     .resizable()
+                                    .resizable()
                                     .scaledToFit()
                                     .frame(width: 60, height: 60)
                                     .foregroundColor(.secondary)
                             }
                         }
-                        .frame(width: 92, height: 92, alignment: .top)
+                        .frame(width: 92, height: 92)
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text(app.name)
@@ -89,7 +87,6 @@ public struct AppDetailView: View {
                                     Text(dev)
                                         .font(.subheadline)
                                         .foregroundColor(.secondary)
-
                                     if let repo = app.repositoryName, !repo.isEmpty {
                                         Text(repo)
                                             .font(.caption)
@@ -109,13 +106,13 @@ public struct AppDetailView: View {
                         }
                     }
 
-                    // General description
-                    if let generalDesc = app.localizedDescription, generalDesc != latestVersion?.localizedDescription {
+                    if let generalDesc = app.localizedDescription,
+                       generalDesc != latestVersion?.localizedDescription {
                         Text(generalDesc)
                     }
 
-                    // What's New
-                    if let latest = latestVersion, let latestDesc = latest.localizedDescription,
+                    if let latest = latestVersion,
+                       let latestDesc = latest.localizedDescription,
                        latestDesc != app.localizedDescription {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("What's New?")
@@ -124,68 +121,33 @@ public struct AppDetailView: View {
                         }
                     }
 
-                    // Version info
                     if let latest = latestVersion {
                         VStack(alignment: .leading, spacing: 4) {
                             if let version = latest.version, !version.isEmpty {
-                                HStack {
-                                    Text("Version:").bold()
-                                    Text(version)
-                                }
+                                HStack { Text("Version:").bold(); Text(version) }
                             }
-
                             if let dateString = latest.date, !dateString.isEmpty {
-                                HStack {
-                                    Text("Released:").bold()
-                                    Text(formatDate(dateString))
-                                }
+                                HStack { Text("Released:").bold(); Text(formatDate(dateString)) }
                             }
-
                             if let size = latest.size {
-                                HStack {
-                                    Text("Size:").bold()
-                                    Text(formatSize(size))
-                                }
+                                HStack { Text("Size:").bold(); Text(formatSize(size)) }
                             }
-
                             if let minOS = latest.minOSVersion, !minOS.isEmpty {
-                                HStack {
-                                    Text("Min iOS Version:").bold()
-                                    Text(minOS)
-                                }
+                                HStack { Text("Min iOS Version:").bold(); Text(minOS) }
                             }
                         }
                     }
 
-                    // Screenshots
                     if let screenshots = app.screenshotURLs, !screenshots.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 12) {
                                 ForEach(screenshots, id: \.self) { url in
                                     AsyncImage(url: url) { phase in
                                         switch phase {
-                                        case .empty:
-                                            ProgressView()
-                                                .frame(height: 200)
-                                                .frame(minWidth: 120)
-                                                .background(Color.gray.opacity(0.08))
-                                                .cornerRadius(10)
-                                        case .success(let image):
-                                            image
-                                                .resizable()
-                                                .scaledToFit()
-                                                .frame(height: 200)
-                                                .cornerRadius(10)
-                                        case .failure:
-                                            Image(systemName: "photo")
-                                                .resizable()
-                                                .scaledToFit()
-                                                .frame(height: 200)
-                                                .frame(minWidth: 120)
-                                                .background(Color.gray.opacity(0.08))
-                                                .cornerRadius(10)
-                                        @unknown default:
-                                            EmptyView()
+                                        case .empty: ProgressView().frame(height: 200).frame(minWidth: 120).background(Color.gray.opacity(0.08)).cornerRadius(10)
+                                        case .success(let image): image.resizable().scaledToFit().frame(height: 200).cornerRadius(10)
+                                        case .failure: Image(systemName: "photo").resizable().scaledToFit().frame(height: 200).frame(minWidth: 120).background(Color.gray.opacity(0.08)).cornerRadius(10)
+                                        @unknown default: EmptyView()
                                         }
                                     }
                                 }
@@ -194,26 +156,24 @@ public struct AppDetailView: View {
                         }
                     }
 
-                    Spacer(minLength: 80) // space for progress bar
+                    Spacer(minLength: 80)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
             }
 
-            // Floating Install button
+            // Floating Install Button
             if !downloadManager.isProcessing {
                 VStack {
                     Spacer()
                     HStack {
                         Spacer()
-                        Button(action: {
-                            // Immediate certificate check from CertificatesManager
+                        Button {
                             if certificatesManager.selectedIdentity == nil {
                                 showCertError = true
                                 return
                             }
                             downloadManager.downloadAndSign(app: app)
-                        }) {
+                        } label: {
                             HStack {
                                 Image(systemName: "arrow.down.circle.fill")
                                 Text("Install")
@@ -234,7 +194,7 @@ public struct AppDetailView: View {
                 }
             }
 
-            // Progress Bar (fixed at bottom)
+            // Progress Bar
             if downloadManager.isProcessing {
                 VStack(spacing: 0) {
                     Rectangle()
@@ -269,11 +229,9 @@ public struct AppDetailView: View {
                             Spacer()
 
                             if !downloadManager.showSuccess {
-                                Button("Cancel") {
-                                    downloadManager.cancel()
-                                }
-                                .font(.caption)
-                                .foregroundColor(.red)
+                                Button("Cancel") { downloadManager.cancel() }
+                                    .font(.caption)
+                                    .foregroundColor(.red)
                             }
                         }
                     }
@@ -289,18 +247,16 @@ public struct AppDetailView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 if downloadManager.isProcessing {
-                    Button("Cancel") {
-                        downloadManager.cancel()
-                    }
-                    .foregroundColor(.red)
+                    Button("Cancel") { downloadManager.cancel() }
+                        .foregroundColor(.red)
                 } else if app.downloadURL != nil {
-                    Button(action: {
+                    Button {
                         if certificatesManager.selectedIdentity == nil {
                             showCertError = true
                             return
                         }
                         downloadManager.downloadAndSign(app: app)
-                    }) {
+                    } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.down.circle")
                             Text("Download")
@@ -308,12 +264,13 @@ public struct AppDetailView: View {
                     }
                     .disabled(certificatesManager.selectedIdentity == nil)
                     .opacity(certificatesManager.selectedIdentity == nil ? 0.6 : 1.0)
+                }
             }
         }
         .alert("Please select a certificate first!", isPresented: $showCertError) {
             Button("OK", role: .cancel) { }
         }
-        .animation(.easeInOut(duration: 0.3), value: downloadManager.isProcessing)
-        .animation(.easeInOut(duration: 0.3), value: downloadManager.showSuccess)
+        .animation(Animation.easeInOut(duration: 0.3), value: downloadManager.isProcessing)
+        .animation(Animation.easeInOut(duration: 0.3), value: downloadManager.showSuccess)
     }
 }
