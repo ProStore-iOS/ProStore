@@ -191,39 +191,26 @@ private func signAndInstallIPA(
                 }
 
                 // Create a view model for installation progress
-// Create a view model for installation progress
-let installerViewModel = InstallerViewModel()
+// inside your Task after signing completes
+let stream = installAppWithStatusStream(from: signedIPAURL)
 
 Task {
     do {
-        try await installAppWithStatus(from: signedIPAURL, viewModel: installerViewModel)
-
-        // Observe the viewModel status to update your UI
-        installerViewModel.$status
-            .receive(on: DispatchQueue.main)
-            .sink { status in
+        for try await status in stream {
+            DispatchQueue.main.async {
                 switch status {
-                case .idle:
-                    break
-                case .uploading(let percent), .installing(let percent):
-                    self.progress = Double(percent) / 100.0
+                case .idle: break
+                case .uploading(let pct), .installing(let pct):
+                    self.progress = Double(pct) / 100.0
                     self.status = status.pretty
                 case .success:
-                    self.status = InstallerViewModel.InstallerStatus.success.pretty
-                case .failure(let message):
-                    self.status = InstallerViewModel.InstallerStatus.failure(message: message).pretty
+                    self.status = status.pretty
+                case .failure(let msg):
+                    self.status = status.pretty
                 case .message(let text):
                     self.status = text
                 }
             }
-            .store(in: &self.cancellables)
-
-        // Hide the bar 3 seconds after install is complete
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            self.isProcessing = false
-            self.showSuccess = false
-            self.progress = 0.0
-            self.status = ""
         }
     } catch {
         DispatchQueue.main.async {
@@ -232,6 +219,7 @@ Task {
         }
     }
 }
+
 
                 // Clean up original downloaded IPA
                 try? FileManager.default.removeItem(at: ipaURL)

@@ -1,34 +1,52 @@
+// installAppStream.swift
 import Foundation
 import Combine
 import IDeviceSwift
 
-public func installAppWithStatus(from ipaURL: URL, viewModel: InstallerViewModel) async throws {
-    var cancellables = Set<AnyCancellable>()
+public func installAppWithStatusStream(from ipaURL: URL) -> AsyncThrowingStream<InstallerStatusViewModel.InstallerStatus, Error> {
+    AsyncThrowingStream { continuation in
+        // create a local view model for the InstallationProxy internals
+        let localVM = InstallerStatusViewModel()
+        var cancellables = Set<AnyCancellable>()
 
-    viewModel.$uploadProgress
-        .sink { progress in
-            DispatchQueue.main.async {
-                let percent = Int(progress * 100)
-                viewModel.status = .uploading(percent: percent)
-                viewModel.progress = 0.5 + (progress * 0.25)
+        // Observe progress and forward into the AsyncStream
+        localVM.$uploadProgress
+            .sink { progress in
+                let pct = Int(progress * 100)
+                continuation.yield(.uploading(percent: pct))
+            }
+            .store(in: &cancellables)
+
+        localVM.$installProgress
+            .sink { progress in
+                let pct = Int(progress * 100)
+                continuation.yield(.installing(percent: pct))
+            }
+            .store(in: &cancellables)
+
+        // Optionally map other status changes
+        localVM.$status
+            .sink { status in
+                continuation.yield(status)
+            }
+            .store(in: &cancellables)
+
+        Task {
+            do {
+                let installer = InstallationProxy(viewModel: localVM)
+                try await installer.install(at: ipaURL)
+                continuation.yield(.success)
+                continuation.finish()
+            } catch {
+                // forward failure as an enum + error finishing
+                continuation.yield(.failure(message: error.localizedDescription))
+                continuation.finish(throwing: error)
             }
         }
-        .store(in: &cancellables)
 
-    viewModel.$installProgress
-        .sink { progress in
-            DispatchQueue.main.async {
-                let percent = Int(progress * 100)
-                viewModel.status = .installing(percent: percent)
-                viewModel.progress = 0.75 + (progress * 0.25)
-            }
+        // on stream termination, cancel Combine sinks
+        continuation.onTermination = { @Sendable _ in
+            cancellables.forEach { $0.cancel() }
         }
-        .store(in: &cancellables)
-
-    // DON'T reassign viewModel.status inside a sink on viewModel.$status —
-    // that just creates a loop. If you want to react to status changes elsewhere,
-    // observe it and map to UI strings there.
-
-    let installer = InstallationProxy(viewModel: viewModel)
-    try await installer.install(at: ipaURL)
+    }
 }
