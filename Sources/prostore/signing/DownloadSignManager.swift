@@ -7,7 +7,10 @@ class DownloadSignManager: ObservableObject {
     @Published var status: String = ""
     @Published var isProcessing: Bool = false
     @Published var showSuccess: Bool = false
-   
+    
+    // New properties for separate error banner
+    @Published var errorMessage: String? = nil
+    
     private var downloadTask: URLSessionDownloadTask?
     private var cancellables = Set<AnyCancellable>()
     private var hideTimer: Timer?
@@ -33,6 +36,7 @@ class DownloadSignManager: ObservableObject {
             return
         }
        
+        // All pre-checks passed → start real processing
         self.isProcessing = true
         self.progress = 0.0
         self.status = "Starting download..."
@@ -45,21 +49,18 @@ class DownloadSignManager: ObservableObject {
     
     private func showTemporaryError(_ message: String) {
         DispatchQueue.main.async {
-            self.isProcessing = true
-            self.progress = 0.0
-            self.status = message
-            self.showSuccess = false
+            // Cancel any ongoing processing
+            self.downloadTask?.cancel()
+            self.isProcessing = false
             
-            // Cancel any existing timer
+            // Show separate error banner
+            self.errorMessage = message
+            
+            // Auto-hide after 5 seconds
             self.hideTimer?.invalidate()
-            
-            // Hide the bar after 5 seconds
             self.hideTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
                 DispatchQueue.main.async {
-                    self.isProcessing = false
-                    self.progress = 0.0
-                    self.status = ""
-                    self.showSuccess = false
+                    self.errorMessage = nil
                 }
             }
         }
@@ -91,12 +92,13 @@ class DownloadSignManager: ObservableObject {
            
             switch result {
             case .success:
-                // Step 3: Get certificate files
+                // Step 3: Get certificate files – now properly guarded to avoid crash
                 guard let (p12URL, provURL, password) = self.getCertificateFiles(for: certFolder) else {
                     DispatchQueue.main.async {
-                        self.status = "Failed to get certificate files"
-                        self.isProcessing = false
+                        self.showTemporaryError("Failed to locate certificate files. Please re-select your certificate.")
                     }
+                    // Clean up downloaded IPA
+                    try? fm.removeItem(at: tempIPAURL)
                     return
                 }
                
@@ -149,7 +151,7 @@ class DownloadSignManager: ObservableObject {
             let downloadProgress = progress.fractionCompleted * 0.5 // First 50% for download
             DispatchQueue.main.async {
                 self?.progress = downloadProgress
-                let percent = Int(downloadProgress * 200) // Convert to 0-100% scale
+                let percent = Int(downloadProgress * 200)
                 self?.status = "Downloading... (\(percent)%)"
             }
         }
@@ -157,7 +159,6 @@ class DownloadSignManager: ObservableObject {
         self.downloadTask = task
         task.resume()
        
-        // Wait for download to complete
         DispatchQueue.global(qos: .userInitiated).async {
             semaphore.wait()
             observation?.invalidate()
@@ -227,12 +228,10 @@ class DownloadSignManager: ObservableObject {
                             self?.status = ""
                         }
                        
-                        // Clean up original downloaded IPA
                         try? FileManager.default.removeItem(at: ipaURL)
                        
                     case .failure(let error):
-                        self?.status = "❌ Signing failed: \(error.localizedDescription)"
-                        self?.isProcessing = false
+                        self?.showTemporaryError("❌ Signing failed: \(error.localizedDescription)")
                         try? FileManager.default.removeItem(at: ipaURL)
                     }
                 }
@@ -245,6 +244,7 @@ class DownloadSignManager: ObservableObject {
         hideTimer?.invalidate()
         DispatchQueue.main.async {
             self.isProcessing = false
+            self.errorMessage = nil
             self.status = "Cancelled"
             self.progress = 0.0
             self.showSuccess = false
@@ -261,4 +261,3 @@ class DownloadSignManager: ObservableObject {
         return appFolder
     }
 }
-
