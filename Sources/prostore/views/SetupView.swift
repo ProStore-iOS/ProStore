@@ -14,9 +14,24 @@ struct SetupView: View {
             imageName: "star.fill"
         ),
         SetupPage(
-            title: "Install ProStore Shortcut",
-            subtitle: "Please install the shortcut below.",
-            imageName: "shortcut"
+            title: "Install StikDebug",
+            subtitle: "Install StikDebug from the App Store [here](https://apps.apple.com/us/app/stikdebug/id6744045754).",
+            imageName: "bolt.fill"
+        ),
+        SetupPage(
+            title: "Add pairing file to StikDebug",
+            subtitle: "Follow the steps [here](https://stikdebug.xyz/#guide) on your computer to place the pairing file in StikDebug.",
+            imageName: "bolt.fill"
+        ),
+        SetupPage(
+            title: "Add pairing file to ProStore",
+            subtitle: "Go to 'Files', and navigate to the 'StikDebug' folder in 'On My iPad',\nthen duplicate/copy the file to the 'ProStore' folder in 'On My iPad'.\nMake sure its called 'pairingFile.plist'.",
+            imageName: "p.square"
+        ),
+        SetupPage(
+            title: "Reminder",
+            subtitle: "Important: Make sure before every time you use ProStore, turn on the StikDebug VPN by either opening StikDebug or via Settings, otherwise app installs won't work!",
+            imageName: "list.bullet.circle"
         ),
         SetupPage(
             title: "You're finished!",
@@ -43,7 +58,7 @@ struct SetupView: View {
                             .bold()
                             .multilineTextAlignment(.center)
 
-                        Text(pages[index].subtitle)
+                        Text(.init(pages[index].subtitle))
                             .multilineTextAlignment(.center)
                             .padding(.horizontal)
                     }
@@ -69,26 +84,6 @@ struct SetupView: View {
 
                 Button(currentPage == pages.count - 1 ? "Finish" : "Next") {
                     withAnimation {
-
-                        // MARK: - Shortcut install step
-                        if pages[currentPage].title == "Install ProStore Shortcut" {
-
-                            // iCloud-hosted Shortcut URL (works 100% of the time)
-                            let rawURL = "https://www.icloud.com/shortcuts/d26821cec58d42fba93e4b216b70c6d5"
-
-                            if var components = URLComponents(string: "shortcuts://import-shortcut") {
-                                components.queryItems = [
-                                    URLQueryItem(name: "url", value: rawURL)
-                                ]
-
-                                if let shortcutURL = components.url {
-                                    UIApplication.shared.open(shortcutURL)
-                                } else {
-                                    print("⚠️ Failed to build import URL")
-                                }
-                            }
-                        }
-
                         // Continue navigation
                         if currentPage < pages.count - 1 {
                             currentPage += 1
@@ -113,3 +108,4 @@ struct SetupPage {
     let subtitle: String
     let imageName: String
 }
+
