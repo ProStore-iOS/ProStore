@@ -37,6 +37,8 @@ The **best** alternative app store for iOS!
 | **Official Certificates**      | ✅       | ❌        | ❌       | ❌    |
 | **Install via Apple ID**      | ❌       | ✅        | ✅       | ❌    |  
 
+✅ = Full support  
+❌ = No support  
 ⏰ = Coming Soon  
 🟡 = Limited Support
 
@@ -75,5 +77,6 @@ Coming soon!
 - **[AppleP12]([https://github.com/loyahdev/](https://check-p12.applep12.com/))** - Certificate Checker and Status
 
 ---
+
 
 
