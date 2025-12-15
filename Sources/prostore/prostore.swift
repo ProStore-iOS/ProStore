@@ -50,12 +50,11 @@ struct MainSidebarView: View {
                         URL(string: "https://repository.apptesters.org/")!,
                         URL(string: "https://wuxu1.github.io/wuxu-complete.json")!,
                         URL(string: "https://wuxu1.github.io/wuxu-complete-plus.json")!,
-                        URL(string: "https://raw.githubusercontent.com/RealBlackAstronaut/CelestialRepo/main/CelestialRepo.json")!,
+                        URL(string: "https://raw.githubusercontent.com/swaggyP36000/TrollStore-IPAs/main/apps_esign.json")!,
                         URL(string: "https://ipa.cypwn.xyz/cypwn.json")!,
                         URL(string: "https://quarksources.github.io/dist/quantumsource.min.json")!,
                         URL(string: "https://bit.ly/quantumsource-plus-min")!,
-                        URL(string: "https://raw.githubusercontent.com/Neoncat-OG/TrollStore-IPAs/main/apps_esign.json")!,
-                        URL(string: "https://quarksources.github.io/altstore-complete.json")!
+                        URL(string: "https://raw.githubusercontent.com/Neoncat-OG/TrollStore-IPAs/main/apps_esign.json")!
                     ])
                         .navigationTitle("Apps")
                         .navigationBarTitleDisplayMode(.large)
@@ -84,4 +83,5 @@ enum SidebarItem: Hashable {
     case certificates
     case apps
     case about
+
 }
