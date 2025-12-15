@@ -207,7 +207,7 @@ class DownloadSignManager: ObservableObject {
                     self.progress = overallProgress
                     let percentOfSign = Int(round(progress * 100))
                     let overallPercent = Int(round(overallProgress * 100))
-                    self.status = "Signing... (\(percentOfSign)%)"
+                    self.status = "Signing..."
                     // If you want a "Signing... (xx%)" label specifically, you can use:
                     // self.status = "Signing... (\(percentOfSign)%)"
                 }
@@ -255,7 +255,7 @@ class DownloadSignManager: ObservableObject {
                             self.status = installStatus
                             self.showSuccess = true
                         } else {
-                            self.status = "\(installStatus) (\(percent)%)"
+                            self.status = "\(installStatus)"
                         }
                     }
                 }
@@ -314,4 +314,5 @@ class DownloadSignManager: ObservableObject {
         return appFolder
     }
 }
+
 
