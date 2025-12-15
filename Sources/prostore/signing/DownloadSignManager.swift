@@ -7,71 +7,45 @@ class DownloadSignManager: ObservableObject {
     @Published var status: String = ""
     @Published var isProcessing: Bool = false
     @Published var showSuccess: Bool = false
-    
-    // New properties for separate error banner
-    @Published var errorMessage: String? = nil
-    
+
     private var downloadTask: URLSessionDownloadTask?
+    private var downloadProgressObservation: NSKeyValueObservation?
+    private var installationStream: AsyncThrowingStream<(progress: Double, status: String), Error>?
+    private var installationTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
-    private var hideTimer: Timer?
-   
+
+    // Portion split (tweak if you want different ratios)
+    private let downloadPortion: Double = 0.33
+    private let signPortion: Double = 0.33
+    private let installPortion: Double = 1.0 - (0.33 + 0.33) // ~0.34
+
     func downloadAndSign(app: AltApp) {
         guard let downloadURL = app.downloadURL else {
-            self.showTemporaryError("No download URL available")
+            self.status = "No download URL available"
             return
         }
-       
-        // Check for pairingFile.plist
-        let pairingFileURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("pairingFile.plist")
-       
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: pairingFileURL.path) else {
-            self.showTemporaryError("Please follow setup steps to place the pairingFile.plist in the ProStore folder.")
-            return
-        }
-       
+
         guard let selectedCertFolder = UserDefaults.standard.string(forKey: "selectedCertificateFolder") else {
-            self.showTemporaryError("Please add and select a certificate first!")
+            self.status = "No certificate selected"
             return
         }
-       
-        // All pre-checks passed → start real processing
+
         self.isProcessing = true
         self.progress = 0.0
         self.status = "Starting download..."
         self.showSuccess = false
-       
+
         DispatchQueue.global(qos: .userInitiated).async {
             self.performDownloadAndSign(downloadURL: downloadURL, appName: app.name, certFolder: selectedCertFolder)
         }
     }
-    
-    private func showTemporaryError(_ message: String) {
-        DispatchQueue.main.async {
-            // Cancel any ongoing processing
-            self.downloadTask?.cancel()
-            self.isProcessing = false
-            
-            // Show separate error banner
-            self.errorMessage = message
-            
-            // Auto-hide after 5 seconds
-            self.hideTimer?.invalidate()
-            self.hideTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
-                DispatchQueue.main.async {
-                    self.errorMessage = nil
-                }
-            }
-        }
-    }
-   
+
     private func performDownloadAndSign(downloadURL: URL, appName: String, certFolder: String) {
         // Step 1: Setup directories
         let fm = FileManager.default
         let appFolder = self.getAppFolder()
         let tempDir = appFolder.appendingPathComponent("temp")
-       
+
         do {
             if !fm.fileExists(atPath: tempDir.path) {
                 try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -83,102 +57,129 @@ class DownloadSignManager: ObservableObject {
             }
             return
         }
-       
+
         let tempIPAURL = tempDir.appendingPathComponent("\(UUID().uuidString).ipa")
-       
-        // Step 2: Download the IPA
+
+        // Step 2: Download the IPA (with progress)
         self.downloadIPA(from: downloadURL, to: tempIPAURL) { [weak self] result in
             guard let self = self else { return }
-           
+
+            // ensure observer cleared
+            self.downloadProgressObservation = nil
+
             switch result {
             case .success:
-                // Step 3: Get certificate files – now properly guarded to avoid crash
+                // Step 3: Get certificate files
                 guard let (p12URL, provURL, password) = self.getCertificateFiles(for: certFolder) else {
                     DispatchQueue.main.async {
-                        self.showTemporaryError("Failed to locate certificate files. Please re-select your certificate.")
+                        self.status = "Failed to get certificate files"
+                        self.isProcessing = false
                     }
-                    // Clean up downloaded IPA
-                    try? fm.removeItem(at: tempIPAURL)
                     return
                 }
-               
+
                 // Step 4: Sign the IPA
                 self.signIPA(ipaURL: tempIPAURL, p12URL: p12URL, provURL: provURL, password: password, appName: appName)
-               
+
             case .failure(let error):
                 DispatchQueue.main.async {
                     self.status = "Download failed: \(error.localizedDescription)"
                     self.isProcessing = false
                 }
-               
+
                 // Clean up temp file if it exists
-                try? fm.removeItem(at: tempIPAURL)
+                try? FileManager.default.removeItem(at: tempIPAURL)
             }
         }
     }
-   
-    private func downloadIPA(from url: URL, to destination: URL, completion: @escaping (Result<Void, Error>) -> Void) {
-        let semaphore = DispatchSemaphore(value: 0)
-       
-        let task = URLSession.shared.downloadTask(with: url) { tempURL, response, error in
-            defer { semaphore.signal() }
-           
+
+    // Download with progress observer and final move to destination
+    private func downloadIPA(from url: URL, to destinationURL: URL, completion: @escaping (Result<Void, Error>) -> Void) {
+        let request = URLRequest(url: url)
+        let session = URLSession(configuration: .default)
+
+        DispatchQueue.main.async {
+            self.status = "Downloading... (0%)"
+            self.progress = 0.0
+        }
+
+        let task = session.downloadTask(with: request) { [weak self] tempLocalURL, response, error in
+            guard let self = self else { return }
+
+            if let error = error as NSError?, error.domain == NSURLErrorDomain, error.code == NSURLErrorCancelled {
+                DispatchQueue.main.async {
+                    self.status = "Cancelled"
+                    self.isProcessing = false
+                    self.progress = 0.0
+                }
+                completion(.failure(error))
+                return
+            }
+
             if let error = error {
                 completion(.failure(error))
                 return
             }
-           
-            guard let tempURL = tempURL else {
-                completion(.failure(NSError(domain: "Download", code: -1, userInfo: [NSLocalizedDescriptionKey: "No temp URL returned"])))
+
+            guard let tempLocalURL = tempLocalURL else {
+                let err = NSError(domain: "DownloadSignManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "No temp file URL"])
+                completion(.failure(err))
                 return
             }
-           
+
             do {
-                let fm = FileManager.default
-                if fm.fileExists(atPath: destination.path) {
-                    try fm.removeItem(at: destination)
+                // If destination exists, remove it
+                if FileManager.default.fileExists(atPath: destinationURL.path) {
+                    try FileManager.default.removeItem(at: destinationURL)
                 }
-                try fm.moveItem(at: tempURL, to: destination)
+                try FileManager.default.moveItem(at: tempLocalURL, to: destinationURL)
+
+                DispatchQueue.main.async {
+                    // make sure progress reflects completed download within its portion
+                    self.progress = self.downloadPortion
+                    self.status = "Downloaded (100%)"
+                }
+
                 completion(.success(()))
             } catch {
                 completion(.failure(error))
             }
         }
-       
-        // Observe download progress
-        var observation: NSKeyValueObservation?
-        observation = task.progress.observe(\.fractionCompleted) { [weak self] progress, _ in
-            let downloadProgress = progress.fractionCompleted * 0.5 // First 50% for download
+
+        // keep reference for cancel()
+        self.downloadTask = task
+
+        // Observe the Progress
+        self.downloadProgressObservation = task.progress.observe(\.fractionCompleted, options: [.initial, .new]) { [weak self] progressObj, _ in
+            guard let self = self else { return }
             DispatchQueue.main.async {
-                self?.progress = downloadProgress
-                let percent = Int(downloadProgress * 200)
-                self?.status = "Downloading... (\(percent)%)"
+                let fraction = progressObj.fractionCompleted // 0.0 .. 1.0
+                // Map download fraction to [0 .. downloadPortion]
+                let overall = fraction * self.downloadPortion
+                self.progress = overall
+
+                let percent = Int(round(fraction * 100))
+                self.status = "Downloading... (\(percent)%)"
             }
         }
-       
-        self.downloadTask = task
+
         task.resume()
-       
-        DispatchQueue.global(qos: .userInitiated).async {
-            semaphore.wait()
-            observation?.invalidate()
-        }
     }
-    
-    private func getCertificateFiles(for folderName: String) -> (p12URL: URL, provURL: URL, password: String)? {
+
+        private func getCertificateFiles(for folderName: String) -> (p12URL: URL, provURL: URL, password: String)? {
         let fm = FileManager.default
         let certsDir = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(folderName)
-       
+        
         let p12URL = certsDir.appendingPathComponent("certificate.p12")
         let provURL = certsDir.appendingPathComponent("profile.mobileprovision")
         let passwordURL = certsDir.appendingPathComponent("password.txt")
-       
+        
         guard fm.fileExists(atPath: p12URL.path),
               fm.fileExists(atPath: provURL.path),
               fm.fileExists(atPath: passwordURL.path) else {
             return nil
         }
-       
+        
         do {
             let password = try String(contentsOf: passwordURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             return (p12URL, provURL, password)
@@ -186,13 +187,13 @@ class DownloadSignManager: ObservableObject {
             return nil
         }
     }
-   
+
     private func signIPA(ipaURL: URL, p12URL: URL, provURL: URL, password: String, appName: String) {
         DispatchQueue.main.async {
             self.status = "Starting signing process..."
-            self.progress = 0.5
+            // keep progress where download left off (downloadPortion)
         }
-   
+
         signer.sign(
             ipaURL: ipaURL,
             p12URL: p12URL,
@@ -200,57 +201,109 @@ class DownloadSignManager: ObservableObject {
             p12Password: password,
             progressUpdate: { [weak self] status, progress in
                 DispatchQueue.main.async {
-                    let overallProgress = 0.5 + (progress * 0.5)
-                    self?.progress = overallProgress
-                    let percent = Int(overallProgress * 100)
-                    self?.status = "\(status) (\(percent)%)"
+                    guard let self = self else { return }
+                    // Signing maps to the middle portion (downloadPortion .. downloadPortion + signPortion)
+                    let overallProgress = self.downloadPortion + (progress * self.signPortion)
+                    self.progress = overallProgress
+                    let percentOfSign = Int(round(progress * 100))
+                    let overallPercent = Int(round(overallProgress * 100))
+                    self.status = "\(status) (\(overallPercent)%)"
+                    // If you want a "Signing... (xx%)" label specifically, you can use:
+                    // self.status = "Signing... (\(percentOfSign)%)"
                 }
             },
             completion: { [weak self] result in
                 DispatchQueue.main.async {
+                    guard let self = self else { return }
                     switch result {
                     case .success(let signedIPAURL):
-                        self?.progress = 1.0
-                        self?.status = "✅ Successfully signed ipa! Installing app now..."
-                        self?.showSuccess = true
-                       
-                        Task {
-                            do {
-                                try await installApp(from: signedIPAURL)
-                            } catch {
-                                self?.status = "❌ Install failed: \(error.localizedDescription)"
-                            }
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                            self?.isProcessing = false
-                            self?.showSuccess = false
-                            self?.progress = 0.0
-                            self?.status = ""
-                        }
-                       
+                        // After signing, set progress to end of signing portion
+                        self.progress = self.downloadPortion + self.signPortion
+                        self.status = "✅ Signed! Installing app..."
+                        // Start installation and track progress
+                        self.startInstallation(signedIPAURL: signedIPAURL)
+
+                        // Clean up original downloaded IPA
                         try? FileManager.default.removeItem(at: ipaURL)
-                       
+
                     case .failure(let error):
-                        self?.showTemporaryError("❌ Signing failed: \(error.localizedDescription)")
+                        self.status = "❌ Signing failed: \(error.localizedDescription)"
+                        self.isProcessing = false
                         try? FileManager.default.removeItem(at: ipaURL)
                     }
                 }
             }
         )
     }
-   
-    func cancel() {
-        downloadTask?.cancel()
-        hideTimer?.invalidate()
-        DispatchQueue.main.async {
-            self.isProcessing = false
-            self.errorMessage = nil
-            self.status = "Cancelled"
-            self.progress = 0.0
-            self.showSuccess = false
+
+    private func startInstallation(signedIPAURL: URL) {
+        self.installationTask = Task {
+            do {
+                // Get the installation progress stream
+                let stream = try await installApp(from: signedIPAURL)
+                self.installationStream = stream
+
+                // Process installation progress updates
+                for try await (installProgress, installStatus) in stream {
+                    await MainActor.run {
+                        // Installation maps to final portion:
+                        let overallProgress = self.downloadPortion + self.signPortion + (installProgress * self.installPortion)
+                        self.progress = overallProgress
+
+                        let percent = Int(round(overallProgress * 100))
+                        if installStatus.contains("Successfully") {
+                            self.status = installStatus
+                            self.showSuccess = true
+                        } else {
+                            self.status = "\(installStatus) (\(percent)%)"
+                        }
+                    }
+                }
+
+                // Installation completed successfully
+                await MainActor.run {
+                    self.progress = 1.0
+                    self.status = "✅ Successfully installed app!"
+                    self.showSuccess = true
+
+                    // Hide progress bar after 5 seconds
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                        self.isProcessing = false
+                        self.showSuccess = false
+                        self.progress = 0.0
+                        self.status = ""
+                        self.installationStream = nil
+                        self.installationTask = nil
+                    }
+                }
+
+            } catch {
+                await MainActor.run {
+                    self.status = "❌ Install failed: \(error.localizedDescription)"
+                    self.isProcessing = false
+                    self.installationStream = nil
+                    self.installationTask = nil
+                }
+            }
         }
     }
-   
+
+    func cancel() {
+        downloadTask?.cancel()
+        installationTask?.cancel()
+        installationStream = nil
+        installationTask = nil
+
+        // Remove observer
+        downloadProgressObservation = nil
+
+        DispatchQueue.main.async {
+            self.isProcessing = false
+            self.status = "Cancelled"
+            self.progress = 0.0
+        }
+    }
+
     private func getAppFolder() -> URL {
         let fm = FileManager.default
         let documents = fm.urls(for: .documentDirectory, in: .userDomainMask).first!
@@ -260,4 +313,4 @@ class DownloadSignManager: ObservableObject {
         }
         return appFolder
     }
-}
+
