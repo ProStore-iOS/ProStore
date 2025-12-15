@@ -166,6 +166,28 @@ class DownloadSignManager: ObservableObject {
         task.resume()
     }
 
+        private func getCertificateFiles(for folderName: String) -> (p12URL: URL, provURL: URL, password: String)? {
+        let fm = FileManager.default
+        let certsDir = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(folderName)
+        
+        let p12URL = certsDir.appendingPathComponent("certificate.p12")
+        let provURL = certsDir.appendingPathComponent("profile.mobileprovision")
+        let passwordURL = certsDir.appendingPathComponent("password.txt")
+        
+        guard fm.fileExists(atPath: p12URL.path),
+              fm.fileExists(atPath: provURL.path),
+              fm.fileExists(atPath: passwordURL.path) else {
+            return nil
+        }
+        
+        do {
+            let password = try String(contentsOf: passwordURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+            return (p12URL, provURL, password)
+        } catch {
+            return nil
+        }
+    }
+
     private func signIPA(ipaURL: URL, p12URL: URL, provURL: URL, password: String, appName: String) {
         DispatchQueue.main.async {
             self.status = "Starting signing process..."
@@ -292,3 +314,4 @@ class DownloadSignManager: ObservableObject {
         return appFolder
     }
 }
+
