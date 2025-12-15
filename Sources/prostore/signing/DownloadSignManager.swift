@@ -11,9 +11,6 @@ class DownloadSignManager: ObservableObject {
     private var downloadTask: URLSessionDownloadTask?
     private var cancellables = Set<AnyCancellable>()
     
-    // Assuming signer is available - you might need to import it
-    private let signer = signer()
-    
     func downloadAndSign(app: AltApp) {
         guard let downloadURL = app.downloadURL else {
             self.status = "No download URL available"
@@ -71,7 +68,7 @@ class DownloadSignManager: ObservableObject {
                 }
                 
                 // Step 4: Sign the IPA
-                self.signAndInstallIPA(ipaURL: tempIPAURL, p12URL: p12URL, provURL: provURL, password: password, appName: appName)
+                self.signIPA(ipaURL: tempIPAURL, p12URL: p12URL, provURL: provURL, password: password, appName: appName)
                 
             case .failure(let error):
                 DispatchQueue.main.async {
@@ -156,95 +153,60 @@ class DownloadSignManager: ObservableObject {
         }
     }
     
-    private func signAndInstallIPA(
-        ipaURL: URL,
-        p12URL: URL,
-        provURL: URL,
-        password: String,
-        appName: String
-    ) {
-        DispatchQueue.main.async {
-            self.status = "Starting signing process..."
-            self.progress = 0.5
-            self.isProcessing = true
-        }
-
-        // Assuming signer.sign method exists
-        // You'll need to adjust this based on your actual signer implementation
-        signer.sign(
-            ipaURL: ipaURL,
-            p12URL: p12URL,
-            provURL: provURL,
-            p12Password: password,
-            progressUpdate: { [weak self] status, progress in
-                DispatchQueue.main.async {
-                    let overallProgress = 0.5 + (progress * 0.5)
-                    self?.progress = overallProgress
-                    let percent = Int(overallProgress * 100)
-                    self?.status = "\(status) (\(percent)%)"
-                }
-            },
-            completion: { [weak self] result in
-                guard let self = self else { return }
-
+private func signIPA(ipaURL: URL, p12URL: URL, provURL: URL, password: String, appName: String) {
+    DispatchQueue.main.async {
+        self.status = "Starting signing process..."
+        self.progress = 0.5
+    }
+    
+    signer.sign(
+        ipaURL: ipaURL,
+        p12URL: p12URL,
+        provURL: provURL,
+        p12Password: password,
+        progressUpdate: { [weak self] status, progress in
+            DispatchQueue.main.async {
+                let overallProgress = 0.5 + (progress * 0.5)
+                self?.progress = overallProgress
+                let percent = Int(overallProgress * 100)
+                self?.status = "\(status) (\(percent)%)"
+            }
+        },
+        completion: { [weak self] result in
+            DispatchQueue.main.async {
                 switch result {
                 case .success(let signedIPAURL):
-                    DispatchQueue.main.async {
-                        self.progress = 1.0
-                        self.status = "✅ Successfully signed IPA! Installing app now..."
-                        self.showSuccess = true
-                    }
-
-                    // Install the signed IPA
-                    let stream = installAppWithStatusStream(from: signedIPAURL)
-
+                    self?.progress = 1.0
+                    self?.status = "✅ Successfully signed ipa! Installing app now..."
+                    self?.showSuccess = true
+                    
                     Task {
                         do {
-                            for try await status in stream {
-                                DispatchQueue.main.async {
-                                    switch status {
-                                    case .idle: 
-                                        break
-                                    case .uploading(let pct), .installing(let pct):
-                                        self.progress = Double(pct) / 100.0
-                                        self.status = status.pretty
-                                    case .success:
-                                        self.status = status.pretty
-                                        // Optional: Delay resetting to show success
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                            self.isProcessing = false
-                                            self.showSuccess = false
-                                            self.progress = 0.0
-                                        }
-                                    case .failure(let msg):
-                                        self.status = status.pretty
-                                        self.isProcessing = false
-                                    case .message(let text):
-                                        self.status = text
-                                    }
-                                }
-                            }
+                            try await installApp(from: signedIPAURL)
                         } catch {
-                            DispatchQueue.main.async {
-                                self.status = "❌ Install failed: \(error.localizedDescription)"
-                                self.isProcessing = false
-                            }
+                            self?.status = "❌ Install failed: \(error.localizedDescription)"
                         }
                     }
 
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        self?.isProcessing = false
+                        self?.showSuccess = false
+                        self?.progress = 0.0
+                        self?.status = ""
+                    }
+                    
                     // Clean up original downloaded IPA
                     try? FileManager.default.removeItem(at: ipaURL)
-
+                    
                 case .failure(let error):
-                    DispatchQueue.main.async {
-                        self.status = "❌ Signing failed: \(error.localizedDescription)"
-                        self.isProcessing = false
-                        try? FileManager.default.removeItem(at: ipaURL)
-                    }
+                    self?.status = "❌ Signing failed: \(error.localizedDescription)"
+                    self?.isProcessing = false
+                    try? FileManager.default.removeItem(at: ipaURL)
                 }
             }
-        )
-    }
+        }
+    )
+}
     
     func cancel() {
         downloadTask?.cancel()
@@ -265,4 +227,3 @@ class DownloadSignManager: ObservableObject {
         return appFolder
     }
 }
-
