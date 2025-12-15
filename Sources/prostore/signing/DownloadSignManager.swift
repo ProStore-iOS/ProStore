@@ -3,14 +3,15 @@ import Foundation
 import Combine
 
 class DownloadSignManager: ObservableObject {
-    @Published var progress: Double = 0.0
-    @Published var status: String = ""
+    @Published var progress: Double = 0.0           // overall progress (0.0 .. 1.0)
+    @Published var status: String = ""              // human-friendly status shown to user
     @Published var isProcessing: Bool = false
     @Published var showSuccess: Bool = false
 
     private var downloadTask: URLSessionDownloadTask?
     private var downloadProgressObservation: NSKeyValueObservation?
-    private var installationStream: AsyncThrowingStream<(progress: Double, status: String), Error>?
+    // Updated stream type to match new installApp API
+    private var installationStream: AsyncThrowingStream<(phase: InstallPhase, progress: Double, status: String), Error>?
     private var installationTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
 
@@ -159,27 +160,28 @@ class DownloadSignManager: ObservableObject {
                 self.progress = overall
 
                 let percent = Int(round(fraction * 100))
-                self.status = "Downloading... (\(percent)%)"
+                // show specific phase percent in brackets (phase-relative)
+                self.status = "📥 Downloading... (\(percent)%)"
             }
         }
 
         task.resume()
     }
 
-        private func getCertificateFiles(for folderName: String) -> (p12URL: URL, provURL: URL, password: String)? {
+    private func getCertificateFiles(for folderName: String) -> (p12URL: URL, provURL: URL, password: String)? {
         let fm = FileManager.default
         let certsDir = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(folderName)
-        
+
         let p12URL = certsDir.appendingPathComponent("certificate.p12")
         let provURL = certsDir.appendingPathComponent("profile.mobileprovision")
         let passwordURL = certsDir.appendingPathComponent("password.txt")
-        
+
         guard fm.fileExists(atPath: p12URL.path),
               fm.fileExists(atPath: provURL.path),
               fm.fileExists(atPath: passwordURL.path) else {
             return nil
         }
-        
+
         do {
             let password = try String(contentsOf: passwordURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             return (p12URL, provURL, password)
@@ -194,22 +196,22 @@ class DownloadSignManager: ObservableObject {
             // keep progress where download left off (downloadPortion)
         }
 
+        // Updated to use phase-aware SigningPhase
         signer.sign(
             ipaURL: ipaURL,
             p12URL: p12URL,
             provURL: provURL,
             p12Password: password,
-            progressUpdate: { [weak self] status, progress in
+            progressUpdate: { [weak self] phase, phaseProgress in
                 DispatchQueue.main.async {
                     guard let self = self else { return }
-                    // Signing maps to the middle portion (downloadPortion .. downloadPortion + signPortion)
-                    let overallProgress = self.downloadPortion + (progress * self.signPortion)
+                    // Map phase-relative signing progress into overall progress bar
+                    let overallProgress = self.downloadPortion + (phaseProgress * self.signPortion)
                     self.progress = overallProgress
-                    let percentOfSign = Int(round(progress * 100))
-                    let overallPercent = Int(round(overallProgress * 100))
-                    self.status = "\(status) (\(overallPercent)%)"
-                    // If you want a "Signing... (xx%)" label specifically, you can use:
-                    // self.status = "Signing... (\(percentOfSign)%)"
+
+                    // Use the phase-relative percentage in brackets for the status message
+                    let phasePct = Int(round(phaseProgress * 100))
+                    self.status = "\(phase.rawValue) (\(phasePct)%)"
                 }
             },
             completion: { [weak self] result in
@@ -237,36 +239,45 @@ class DownloadSignManager: ObservableObject {
     }
 
     private func startInstallation(signedIPAURL: URL) {
+        // Cancel any existing installation task if present
+        installationTask?.cancel()
+
         self.installationTask = Task {
             do {
-                // Get the installation progress stream
+                // Get the installation progress stream from the updated installApp API
                 let stream = try await installApp(from: signedIPAURL)
+                // Keep a reference so we can nil it later / cancel if needed
                 self.installationStream = stream
 
-                // Process installation progress updates
-                for try await (installProgress, installStatus) in stream {
+                for try await update in stream {
                     await MainActor.run {
-                        // Installation maps to final portion:
-                        let overallProgress = self.downloadPortion + self.signPortion + (installProgress * self.installPortion)
+                        // update.phase is InstallPhase
+                        // update.progress is phase-relative (0.0..1.0)
+                        // Map phase progress to overall progress
+                        let overallProgress = self.downloadPortion + self.signPortion + (update.progress * self.installPortion)
                         self.progress = overallProgress
 
-                        let percent = Int(round(overallProgress * 100))
-                        if installStatus.contains("Successfully") {
-                            self.status = installStatus
+                        // Show phase-relative percent in brackets for the label
+                        let phasePct = Int(round(update.progress * 100))
+
+                        if update.phase == .completed {
+                            // Completed will include a user-friendly status from installApp
+                            self.status = update.status
                             self.showSuccess = true
                         } else {
-                            self.status = "\(installStatus) (\(percent)%)"
+                            // Use InstallPhase text with phase-specific percent
+                            self.status = "\(update.phase.rawValue) (\(phasePct)%)"
                         }
                     }
                 }
 
-                // Installation completed successfully
+                // If the stream finishes normally, mark completed UI state
                 await MainActor.run {
                     self.progress = 1.0
                     self.status = "✅ Successfully installed app!"
                     self.showSuccess = true
 
-                    // Hide progress bar after 5 seconds
+                    // Hide progress bar after a short delay
                     DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
                         self.isProcessing = false
                         self.showSuccess = false
@@ -313,5 +324,4 @@ class DownloadSignManager: ObservableObject {
         }
         return appFolder
     }
-}
 
