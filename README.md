@@ -5,19 +5,15 @@
 
 The **best** alternative app store for iOS!  
 
-> ⚠️ ProStore is a WIP and is currently unfinished.
-
-ProStore app source URL: https://prostore-ios.github.io/apps.json
-
 ---
 
 ## Install ProStore
 
-- <a href="https://prostore-ios.github.io/web/">**DIRECT INSTALL**</a><br><br>
-- <a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=altstore">Add to AltStore</a>  
-- <a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=sidestore">Add to SideStore</a>  
-- <a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=esign">Add to ESign</a>  
-- <a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=scarlet">Add to Scarlet</a>
+<a href="https://prostore-ios.github.io/web/">**DIRECT INSTALL**</a> (Strongly Recommended)<br>or<br>
+<a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=altstore">Add to AltStore</a>  
+<a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=sidestore">Add to SideStore</a>  
+<a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=esign">Add to ESign</a>  
+<a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=scarlet">Add to Scarlet</a>
 
 ---
 
@@ -72,13 +68,6 @@ Coming soon!
 - **[Khcrysalis](https://github.com/khcrysalis/) & [Zhlynn](https://github.com/zhlynn/)** - Creator of the [Zsign Package](https://github.com/khcrysalis/Zsign-Package)
 - **[Khcrysalis](https://github.com/khcrysalis/)** - [iDeviceKit](https://github.com/khcrysalis/idevicekit)  
 - **[Loyahdev](https://github.com/loyahdev/)** - Official ProStore [certificates](https://github.com/loyahdev/certificates) provider!
+- **[AppleP12]([https://github.com/loyahdev/](https://check-p12.applep12.com/))** - Certificate Checker and Status
 
 ---
-
-
-
-
-
-
-
-
