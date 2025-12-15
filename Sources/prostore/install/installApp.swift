@@ -114,7 +114,6 @@ public func installApp(from ipaURL: URL) async throws -> AsyncThrowingStream<(ph
                 }
 
                 cancellables.removeAll()
-                HeartbeatManager.shared.stop()
             } catch {
                 // On error, forward and cleanup
                 DispatchQueue.main.async {
@@ -133,3 +132,4 @@ public func installApp(from ipaURL: URL) async throws -> AsyncThrowingStream<(ph
         }
     }
 }
+
