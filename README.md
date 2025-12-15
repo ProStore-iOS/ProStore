@@ -26,15 +26,18 @@ The **best** alternative app store for iOS!
 
 |  | ProStore | SideStore | AltStore | Esign |
 |:-----------|:--------:|:---------:|:--------:|:-----:|
-| **No PC for Setup**   | ❌       | ❌        | ❌       | ✅    |
+| **No PC for Setup**   | ⏰       | ❌        | ❌       | ✅    |
 | **No PC for Every App Install**      | ✅       | ✅        | ❌       | ✅    |
 | **Direct Install**      | ✅       | ✅        | ✅       | ❌    |
-| **itms-services Install**      | ❌       | ❌        | ❌       | ✅    |
+| **itms-services Install**      | ⏰       | ❌        | ❌       | ✅    |
 | **Unlimited Apps**      | ✅       | ❌        | ❌       | ✅    |
-| **Custom IPA**      | ✅       | ✅        | ✅       | ✅    |
+| **Custom IPA**      | ⏰       | ✅        | ✅       | ✅    |
 | **App Store**      | ✅       | 🟡        | 🟡       | 🟡    |
 | **Certificate Management**      | ✅       | ❌        | ❌       | 🟡    |
-| **Official Certificates**      | ✅       | ❌        | ❌       | ❌    |
+| **Official Certificates**      | ✅       | ❌        | ❌       | ❌    |  
+
+⏰ = Coming Soon  
+🟡 = Limited Support
 
 
 ---
@@ -71,3 +74,4 @@ Coming soon!
 - **[AppleP12]([https://github.com/loyahdev/](https://check-p12.applep12.com/))** - Certificate Checker and Status
 
 ---
+
