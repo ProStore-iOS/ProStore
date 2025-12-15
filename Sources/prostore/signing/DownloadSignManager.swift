@@ -20,7 +20,6 @@ class DownloadSignManager: ObservableObject {
        
         // Check for pairingFile.plist
         let pairingFileURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("ProStore")
             .appendingPathComponent("pairingFile.plist")
        
         let fm = FileManager.default
@@ -262,3 +261,4 @@ class DownloadSignManager: ObservableObject {
         return appFolder
     }
 }
+
