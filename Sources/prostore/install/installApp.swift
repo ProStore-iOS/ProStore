@@ -77,7 +77,6 @@ public func installApp(from ipaURL: URL) async throws -> AsyncThrowingStream<(ph
                             continuation.finish(throwing: error)
                         }
                         cancellables.removeAll()
-                        HeartbeatManager.shared.stop()
 
                     case .broken(let error):
                         // Broken connection or other fatal error
@@ -85,7 +84,6 @@ public func installApp(from ipaURL: URL) async throws -> AsyncThrowingStream<(ph
                             continuation.finish(throwing: error)
                         }
                         cancellables.removeAll()
-                        HeartbeatManager.shared.stop()
 
                     default:
                         break
@@ -118,8 +116,7 @@ public func installApp(from ipaURL: URL) async throws -> AsyncThrowingStream<(ph
                 DispatchQueue.main.async {
                     continuation.finish(throwing: error)
                 }
-                cancellables.removeAll()
-                HeartbeatManager.shared.stop()
+                cancellables.removeAll(
             }
         } // End Task
 
@@ -127,9 +124,9 @@ public func installApp(from ipaURL: URL) async throws -> AsyncThrowingStream<(ph
         continuation.onTermination = { @Sendable _ in
             installTask.cancel()
             cancellables.removeAll()
-            HeartbeatManager.shared.stop()
         }
     }
 }
+
 
 
