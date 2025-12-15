@@ -70,7 +70,6 @@ public func installApp(from ipaURL: URL) async throws -> AsyncThrowingStream<(ph
                         }
                         // cleanup
                         cancellables.removeAll()
-                        HeartbeatManager.shared.stop()
 
                     case .completed(.failure(let error)):
                         // Forward the error and finish the stream
@@ -132,4 +131,5 @@ public func installApp(from ipaURL: URL) async throws -> AsyncThrowingStream<(ph
         }
     }
 }
+
 
