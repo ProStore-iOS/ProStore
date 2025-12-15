@@ -313,4 +313,4 @@ class DownloadSignManager: ObservableObject {
         }
         return appFolder
     }
-
+}
