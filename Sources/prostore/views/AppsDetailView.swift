@@ -6,16 +6,16 @@ public struct AppDetailView: View {
     let app: AltApp
     @StateObject private var downloadManager = DownloadSignManager()
     @Environment(\.dismiss) private var dismiss
-    
+   
     private var latestVersion: AppVersion? {
         app.versions?.first
     }
-
+    
     private func formatSize(_ size: Int?) -> String {
         guard let size = size else { return "Unknown" }
         return ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
     }
-
+    
     private func formatDate(_ dateString: String?) -> String {
         guard let dateString = dateString, let date = ISO8601DateFormatter().date(from: dateString) else {
             return "Unknown"
@@ -24,19 +24,17 @@ public struct AppDetailView: View {
         formatter.dateStyle = .medium
         return formatter.string(from: date)
     }
-
+    
     public var body: some View {
         ZStack(alignment: .bottom) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-
                     // App Header
                     HStack(alignment: .top, spacing: 16) {
                         ZStack {
                             RoundedRectangle(cornerRadius: 12)
                                 .fill(Color.gray.opacity(0.12))
                                 .frame(width: 92, height: 92)
-
                             if let iconURL = app.iconURL {
                                 RetryAsyncImage(
                                     url: iconURL,
@@ -70,18 +68,15 @@ public struct AppDetailView: View {
                             }
                         }
                         .frame(width: 92, height: 92, alignment: .top)
-
                         VStack(alignment: .leading, spacing: 4) {
                             Text(app.name)
                                 .font(.title2)
                                 .bold()
-
                             if let dev = app.developerName, !dev.isEmpty {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(dev)
                                         .font(.subheadline)
                                         .foregroundColor(.secondary)
-
                                     if let repo = app.repositoryName, !repo.isEmpty {
                                         Text(repo)
                                             .font(.caption)
@@ -93,19 +88,16 @@ public struct AppDetailView: View {
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                             }
-
                             Text(app.bundleIdentifier)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .lineLimit(2)
                         }
                     }
-
                     // General description
                     if let generalDesc = app.localizedDescription, generalDesc != latestVersion?.localizedDescription {
                         Text(generalDesc)
                     }
-
                     // What's New
                     if let latest = latestVersion, let latestDesc = latest.localizedDescription,
                        latestDesc != app.localizedDescription {
@@ -115,7 +107,6 @@ public struct AppDetailView: View {
                             Text(latestDesc)
                         }
                     }
-
                     // Version info
                     if let latest = latestVersion {
                         VStack(alignment: .leading, spacing: 4) {
@@ -125,21 +116,18 @@ public struct AppDetailView: View {
                                     Text(version)
                                 }
                             }
-
                             if let dateString = latest.date, !dateString.isEmpty {
                                 HStack {
                                     Text("Released:").bold()
                                     Text(formatDate(dateString))
                                 }
                             }
-
                             if let size = latest.size {
                                 HStack {
                                     Text("Size:").bold()
                                     Text(formatSize(size))
                                 }
                             }
-
                             if let minOS = latest.minOSVersion, !minOS.isEmpty {
                                 HStack {
                                     Text("Min iOS Version:").bold()
@@ -148,7 +136,6 @@ public struct AppDetailView: View {
                             }
                         }
                     }
-
                     // Screenshots (from general app)
                     if let screenshots = app.screenshotURLs, !screenshots.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -185,15 +172,38 @@ public struct AppDetailView: View {
                             .padding(.vertical, 6)
                         }
                     }
-
                     Spacer(minLength: 80) // Space for the progress bar
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
             }
-            
+           
+            // Separate Error Banner (appears at the top of the screen)
+            if let errorMessage = downloadManager.errorMessage {
+                VStack(spacing: 0) {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.red)
+                        Text(errorMessage)
+                            .font(.caption)
+                            .foregroundColor(.primary)
+                        Spacer()
+                    }
+                    .padding()
+                    .background(.regularMaterial)
+                    .cornerRadius(10)
+                    .shadow(radius: 4)
+                    .padding(.horizontal)
+                    .transition(.move(edge: .top))
+                    
+                    Spacer()
+                }
+                .zIndex(1)
+                .animation(.easeInOut(duration: 0.3), value: downloadManager.errorMessage)
+            }
+           
             // Floating Download Button
-            if !downloadManager.isProcessing {
+            if !downloadManager.isProcessing && downloadManager.errorMessage == nil {
                 VStack {
                     Spacer()
                     HStack {
@@ -218,20 +228,20 @@ public struct AppDetailView: View {
                     }
                 }
             }
-            
-            // Progress Bar (fixed at bottom, not part of scroll)
+           
+            // Progress Bar (only during real download/signing/install process)
             if downloadManager.isProcessing {
                 VStack(spacing: 0) {
                     Rectangle()
                         .fill(Color.gray.opacity(0.1))
                         .frame(height: 1)
-                    
+                   
                     VStack(spacing: 8) {
                         HStack {
                             ProgressView(value: downloadManager.progress, total: 1.0)
                                 .progressViewStyle(LinearProgressViewStyle(tint: downloadManager.showSuccess ? .green : .blue))
                                 .scaleEffect(x: 1, y: 1.5, anchor: .center)
-                            
+                           
                             if downloadManager.showSuccess {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.green)
@@ -243,16 +253,16 @@ public struct AppDetailView: View {
                                     .frame(width: 40)
                             }
                         }
-                        
+                       
                         HStack {
                             Text(downloadManager.status)
                                 .font(.caption)
                                 .foregroundColor(downloadManager.showSuccess ? .green : .secondary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
-                            
+                           
                             Spacer()
-                            
+                           
                             if !downloadManager.showSuccess {
                                 Button("Cancel") {
                                     downloadManager.cancel()
@@ -278,7 +288,7 @@ public struct AppDetailView: View {
                         downloadManager.cancel()
                     }
                     .foregroundColor(.red)
-                } else if app.downloadURL != nil {
+                } else if app.downloadURL != nil && downloadManager.errorMessage == nil {
                     Button(action: {
                         downloadManager.downloadAndSign(app: app)
                     }) {
@@ -292,5 +302,6 @@ public struct AppDetailView: View {
         }
         .animation(.easeInOut(duration: 0.3), value: downloadManager.isProcessing)
         .animation(.easeInOut(duration: 0.3), value: downloadManager.showSuccess)
+        .animation(.easeInOut(duration: 0.3), value: downloadManager.errorMessage)
     }
 }
