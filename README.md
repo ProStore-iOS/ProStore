@@ -21,6 +21,28 @@ ProStore app source URL: https://prostore-ios.github.io/apps.json
 
 ---
 
+## Why ProStore?
+
+- No PC after setup!
+- Unlimited app installs!
+- Easy certificate management!
+- App store or upload .ipa
+
+|  | ProStore | SideStore | AltStore | Esign |
+|:-----------|:--------:|:---------:|:--------:|:-----:|
+| **No PC for Setup**   | ❌       | ❌        | ❌       | ✅    |
+| **No PC for Every App Install**      | ✅       | ✅        | ❌       | ✅    |
+| **Direct Install**      | ✅       | ✅        | ✅       | ❌    |
+| **itms-services Install**      | ❌       | ❌        | ❌       | ✅    |
+| **Unlimited Apps**      | ✅       | ❌        | ❌       | ✅    |
+| **Custom IPA**      | ✅       | ✅        | ✅       | ✅    |
+| **App Store**      | ✅       | 🟡        | 🟡       | 🟡    |
+| **Certificate Management**      | ✅       | ❌        | ❌       | 🟡    |
+| **Official Certificates**      | ✅       | ❌        | ❌       | ❌    |
+
+
+---
+
 ## Gallery
 Coming soon!
 <!--
@@ -52,6 +74,7 @@ Coming soon!
 - **[Loyahdev](https://github.com/loyahdev/)** - Official ProStore [certificates](https://github.com/loyahdev/certificates) provider!
 
 ---
+
 
 
 
