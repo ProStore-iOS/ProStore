@@ -46,14 +46,10 @@ The **best** alternative app store for iOS!
 ---
 
 ## Gallery
-Coming soon!
-<!--
 <img src="gallery/Screenshot1.png" width="550">&nbsp;
 <img src="gallery/Screenshot2.png" width="550">&nbsp;
 <img src="gallery/Screenshot3.png" width="550">&nbsp;
-<img src="gallery/Screenshot4.png" width="550">&nbsp;
-<img src="gallery/Screenshot5.png" width="550">
--->
+<img src="gallery/Screenshot4.png" width="550">
 
 ---
 
@@ -77,6 +73,7 @@ Coming soon!
 - **[AppleP12](https://check-p12.applep12.com/)** - Certificate Checker and Status
 
 ---
+
 
 
 
