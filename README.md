@@ -74,9 +74,10 @@ Coming soon!
 - **[Khcrysalis](https://github.com/khcrysalis/) & [Zhlynn](https://github.com/zhlynn/)** - Creator of the [Zsign Package](https://github.com/khcrysalis/Zsign-Package)
 - **[Khcrysalis](https://github.com/khcrysalis/)** - [iDeviceKit](https://github.com/khcrysalis/idevicekit)  
 - **[Loyahdev](https://github.com/loyahdev/)** - Official ProStore [certificates](https://github.com/loyahdev/certificates) provider!
-- **[AppleP12]([https://github.com/loyahdev/](https://check-p12.applep12.com/))** - Certificate Checker and Status
+- **[AppleP12](https://check-p12.applep12.com/)** - Certificate Checker and Status
 
 ---
+
 
 
 
