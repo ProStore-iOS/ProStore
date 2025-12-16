@@ -335,11 +335,11 @@ class DownloadSignManager: ObservableObject {
 
     private func getAppFolder() -> URL {
         let fm = FileManager.default
-        let documents = fm.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let appFolder = documents.appendingPathComponent("AppFolder")
+        let appFolder = fm.urls(for: .documentDirectory, in: .userDomainMask).first!
         if !fm.fileExists(atPath: appFolder.path) {
             try? fm.createDirectory(at: appFolder, withIntermediateDirectories: true)
         }
         return appFolder
     }
 }
+
