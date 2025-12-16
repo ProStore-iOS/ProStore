@@ -54,7 +54,6 @@ struct MainSidebarView: View {
                         URL(string: "https://ipa.cypwn.xyz/cypwn.json")!,
                         URL(string: "https://quarksources.github.io/dist/quantumsource.min.json")!,
                         URL(string: "https://bit.ly/quantumsource-plus-min")!,
-                        URL(string: "https://aio.zxcvbn.fyi/r/repo.esign.json")!,
                         URL(string: "https://raw.githubusercontent.com/Neoncat-OG/TrollStore-IPAs/main/apps_esign.json")!
                     ])
                         .navigationTitle("Store")
@@ -86,5 +85,6 @@ enum SidebarItem: Hashable {
     case about
 
 }
+
 
 
