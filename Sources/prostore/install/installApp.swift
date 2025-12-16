@@ -3,57 +3,101 @@ import Foundation
 import IDeviceSwift
 import Combine
 
+// MARK: - Error Transformer
+private func transformInstallError(_ error: Error) -> Error {
+    let nsError = error as NSError
+    let description = nsError.localizedDescription
+
+    // Exact StikDebug VPN error
+    if description == "The operation couldn't be completed. (IDeviceSwift.IDeviceSwiftError error 1.)" {
+        return NSError(
+            domain: nsError.domain,
+            code: nsError.code,
+            userInfo: [
+                NSLocalizedDescriptionKey:
+                "iDevice failed to install the app! Make sure the StikDebug VPN is turned on!"
+            ]
+        )
+    }
+
+    // Generic: The operation couldn't be completed. (<blah1> error <blah2>.)
+    let regex = #"^The operation couldn't be completed\. \((.+ error .+)\.\)$"#
+
+    if let matchRange = description.range(of: regex, options: .regularExpression) {
+        let inner = description[matchRange]
+            .replacingOccurrences(of: "The operation couldn't be completed. (", with: "")
+            .replacingOccurrences(of: ".)", with: "")
+
+        return NSError(
+            domain: nsError.domain,
+            code: nsError.code,
+            userInfo: [
+                NSLocalizedDescriptionKey:
+                "iDevice failed to install the app! (\(inner).)"
+            ]
+        )
+    }
+
+    // Otherwise: untouched
+    return error
+}
+
+// MARK: - Install App
 /// Installs a signed IPA on the device using InstallationProxy
-public func installApp(from ipaURL: URL) async throws -> AsyncThrowingStream<(progress: Double, status: String), Error> {
+public func installApp(from ipaURL: URL) async throws
+-> AsyncThrowingStream<(progress: Double, status: String), Error> {
+
     print("Installing app from: \(ipaURL.path)")
 
     return AsyncThrowingStream { continuation in
         Task {
-            // Start heartbeat to keep connection alive during long install
+            // Start heartbeat to keep connection alive
             HeartbeatManager.shared.start()
 
-            // Create view model to receive installation status updates
             let viewModel = InstallerStatusViewModel()
-            
-            // Observe progress updates
             var cancellables = Set<AnyCancellable>()
-            
-            // Combine progress updates into a single stream
+
+            // Progress stream
             viewModel.$uploadProgress
                 .combineLatest(viewModel.$installProgress)
                 .sink { uploadProgress, installProgress in
                     let overallProgress = (uploadProgress + installProgress) / 2.0
-                    let currentStage: String
-                    
+                    let status: String
+
                     if uploadProgress < 1.0 {
-                        currentStage = "📤 Uploading..."
+                        status = "📤 Uploading..."
                     } else if installProgress < 1.0 {
-                        currentStage = "📲 Installing..."
+                        status = "📲 Installing..."
                     } else {
-                        currentStage = "🏁 Finalizing..."
+                        status = "🏁 Finalizing..."
                     }
-                    
-                    continuation.yield((progress: overallProgress, status: currentStage))
+
+                    continuation.yield((overallProgress, status))
                 }
                 .store(in: &cancellables)
-            
-            // Handle completion
+
+            // Completion handling
             viewModel.$status
                 .sink { installerStatus in
                     switch installerStatus {
+
                     case .completed(.success):
-                        continuation.yield((progress: 1.0, status: "Successfully installed app!"))
+                        continuation.yield((1.0, "Successfully installed app!"))
                         continuation.finish()
                         cancellables.removeAll()
-                        
+
                     case .completed(.failure(let error)):
-                        continuation.finish(throwing: error)
+                        continuation.finish(
+                            throwing: transformInstallError(error)
+                        )
                         cancellables.removeAll()
-                        
+
                     case .broken(let error):
-                        continuation.finish(throwing: error)
+                        continuation.finish(
+                            throwing: transformInstallError(error)
+                        )
                         cancellables.removeAll()
-                        
+
                     default:
                         break
                     }
@@ -61,21 +105,18 @@ public func installApp(from ipaURL: URL) async throws -> AsyncThrowingStream<(pr
                 .store(in: &cancellables)
 
             do {
-                // Create the installation proxy
                 let installer = await InstallationProxy(viewModel: viewModel)
-                
-                // Perform the actual installation
                 try await installer.install(at: ipaURL)
-                
-                // Wait a moment for completion
-                try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
-                
+
+                try await Task.sleep(nanoseconds: 1_000_000_000)
                 print("Installation completed successfully!")
+
             } catch {
-                continuation.finish(throwing: error)
+                continuation.finish(
+                    throwing: transformInstallError(error)
+                )
                 cancellables.removeAll()
             }
         }
     }
 }
-
