@@ -60,7 +60,7 @@ fileprivate class SigningManager {
     ) {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                progressUpdate("Preparing files 📂", 0.0)
+                progressUpdate("📂 Preparing files", 0.0)
                 let (tmpRoot, inputsDir, workDir) = try prepareTemporaryWorkspace()
                 defer {
                     cleanupTemporaryFiles(at: tmpRoot)
@@ -71,16 +71,16 @@ fileprivate class SigningManager {
                     provURL: provURL,
                     to: inputsDir
                 )
-                progressUpdate("Unzipping IPA 🔓", 0.25)
+                progressUpdate("🔓 Unzipping IPA", 0.25)
                 try extractIPA(ipaURL: localIPA, to: workDir, progressUpdate: { progress in
                     // Convert 0.0-1.0 progress to 0.25-0.5 range
                     let overallProgress = 0.25 + (progress * 0.25)
                     let pct = Int(progress * 100)
-                    progressUpdate("Unzipping IPA 🔓", overallProgress)
+                    progressUpdate("🔓 Unzipping IPA", overallProgress)
                 })
                 let payloadDir = workDir.appendingPathComponent("Payload")
                 let appDir = try findAppBundle(in: payloadDir)
-                progressUpdate("Signing \(appDir.lastPathComponent) ✍️", 0.5)
+                progressUpdate("✍️ Signing \(appDir.lastPathComponent)", 0.5)
                 let sema = DispatchSemaphore(value: 0)
                 var signingError: Error?
                 
@@ -102,7 +102,7 @@ fileprivate class SigningManager {
                     throw error
                 }
                 
-                progressUpdate("Zipping signed IPA 📦", 0.75)
+                progressUpdate("📦 Zipping signed IPA", 0.75)
                 let signedIPAURL = try createSignedIPA(
                     from: workDir,
                     originalIPAURL: ipaURL,
@@ -111,7 +111,7 @@ fileprivate class SigningManager {
                         // Convert 0.0-1.0 progress to 0.75-1.0 range
                         let overallProgress = 0.75 + (progress * 0.25)
                         let pct = Int(progress * 100)
-                        progressUpdate("Zipping signed IPA 📦", overallProgress)
+                        progressUpdate("📦 Zipping signed IPA", overallProgress)
                     }
                 )
                 completion(.success(signedIPAURL))
@@ -226,3 +226,4 @@ fileprivate class SigningManager {
         return appFolder
     }
 }
+
