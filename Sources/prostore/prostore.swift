@@ -17,13 +17,13 @@ struct ProStore: App {
 }
 
 struct MainSidebarView: View {
-    @State private var selected: SidebarItem? = .apps
+    @State private var selected: SidebarItem? = .store
 
     var body: some View {
         NavigationSplitView {
             List(selection: $selected) {
-                NavigationLink(value: SidebarItem.apps) {
-                    Label("Apps", systemImage: "square.grid.2x2.fill")
+                NavigationLink(value: SidebarItem.store) {
+                    Label("Store", systemImage: "cart.fill")
                 }
                 NavigationLink(value: SidebarItem.certificates) {
                     Label("Certificates", systemImage: "key")
@@ -44,7 +44,7 @@ struct MainSidebarView: View {
                         .navigationTitle("Certificates")
                         .navigationBarTitleDisplayMode(.large)
                 }
-            case .apps:
+            case .store:
                 NavigationStack {
                     AppsView(repoURLs: [
                         URL(string: "https://repository.apptesters.org/")!,
@@ -57,7 +57,7 @@ struct MainSidebarView: View {
                         URL(string: "https://aio.zxcvbn.fyi/r/repo.esign.json")!,
                         URL(string: "https://raw.githubusercontent.com/Neoncat-OG/TrollStore-IPAs/main/apps_esign.json")!
                     ])
-                        .navigationTitle("Apps")
+                        .navigationTitle("Store")
                         .navigationBarTitleDisplayMode(.large)
                 }
             case .about:
@@ -82,8 +82,9 @@ struct MainSidebarView: View {
 enum SidebarItem: Hashable {
     case updater
     case certificates
-    case apps
+    case store
     case about
 
 }
+
 
