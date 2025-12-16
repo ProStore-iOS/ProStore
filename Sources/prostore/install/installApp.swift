@@ -26,11 +26,11 @@ public func installApp(from ipaURL: URL) async throws -> AsyncThrowingStream<(pr
                     let currentStage: String
                     
                     if uploadProgress < 1.0 {
-                        currentStage = "Uploading..."
+                        currentStage = "📤 Uploading..."
                     } else if installProgress < 1.0 {
-                        currentStage = "Installing..."
+                        currentStage = "📲 Installing..."
                     } else {
-                        currentStage = "Finalizing..."
+                        currentStage = "🏁 Finalizing..."
                     }
                     
                     continuation.yield((progress: overallProgress, status: currentStage))
@@ -78,3 +78,4 @@ public func installApp(from ipaURL: URL) async throws -> AsyncThrowingStream<(pr
         }
     }
 }
+
