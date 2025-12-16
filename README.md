@@ -9,7 +9,7 @@ The **best** alternative app store for iOS!
 
 ## Install ProStore
 
-<a href="https://prostore-ios.github.io/web/">**DIRECT INSTALL**</a> (Strongly Recommended)<br>or<br>
+<a href="https://prostore-ios.github.io/">**DIRECT INSTALL**</a> (Strongly Recommended)<br>or<br>
 <a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=altstore">Add to AltStore</a>  
 <a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=sidestore">Add to SideStore</a>  
 <a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=esign">Add to ESign</a>  
@@ -73,6 +73,7 @@ The **best** alternative app store for iOS!
 - **[AppleP12](https://check-p12.applep12.com/)** - Certificate Checker and Status
 
 ---
+
 
 
 
