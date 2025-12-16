@@ -99,7 +99,7 @@ class DownloadSignManager: ObservableObject {
         let session = URLSession(configuration: .default)
 
         DispatchQueue.main.async {
-            self.status = "Downloading... (0%)"
+            self.status = "📥 Downloading... (0%)"
             self.progress = 0.0
         }
 
@@ -137,7 +137,7 @@ class DownloadSignManager: ObservableObject {
                 DispatchQueue.main.async {
                     // make sure progress reflects completed download within its portion
                     self.progress = self.downloadPortion
-                    self.status = "Downloaded (100%)"
+                    self.status = "📥 Downloaded (100%)"
                 }
 
                 completion(.success(()))
@@ -159,7 +159,7 @@ class DownloadSignManager: ObservableObject {
                 self.progress = overall
 
                 let percent = Int(round(fraction * 100))
-                self.status = "Downloading... (\(percent)%)"
+                self.status = "📥 Downloading... (\(percent)%)"
             }
         }
 
@@ -189,11 +189,6 @@ class DownloadSignManager: ObservableObject {
     }
 
     private func signIPA(ipaURL: URL, p12URL: URL, provURL: URL, password: String, appName: String) {
-        DispatchQueue.main.async {
-            self.status = "Starting signing process..."
-            // keep progress where download left off (downloadPortion)
-        }
-
         signer.sign(
             ipaURL: ipaURL,
             p12URL: p12URL,
@@ -215,7 +210,6 @@ progressUpdate: { [weak self] status, progress in
                     case .success(let signedIPAURL):
                         // After signing, set progress to end of signing portion
                         self.progress = self.downloadPortion + self.signPortion
-                        self.status = "✅ Signed! Installing app..."
                         // Start installation and track progress
                         self.startInstallation(signedIPAURL: signedIPAURL)
 
@@ -310,6 +304,7 @@ progressUpdate: { [weak self] status, progress in
         return appFolder
     }
 }
+
 
 
 
