@@ -272,29 +272,43 @@ private func reloadCertificatesAndEnsureSelection() {
                 let mp = try Data(contentsOf: mpURL)
                 let pw = (try? String(contentsOf: pwURL, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 
-                let parsed = try await CertChecker.checkCert(
-                    mobileProvision: mp, 
-                    mobileProvisionFilename: "profile.mobileprovision", 
-                    p12: p12, 
-                    p12Filename: "certificate.p12", 
-                    password: pw
-                )
-                
-                let status = (parsed["certificate"] as? [String: String])?["status"] ?? 
-                            (parsed["certificate_matching_status"] as? String) ?? 
-                            "Unknown"
-                
-                await MainActor.run { 
-                    certStatuses[certCopy.folderName] = status 
+                // 1) show cached immediately (if available)
+                if let cached = CertChecker.cachedResult(p12Data: p12, mpData: mp, password: pw) {
+                    let status = (cached["certificate"] as? [String: String])?["status"]
+                              ?? (cached["certificate_matching_status"] as? String)
+                              ?? (cached["overall_status"] as? String)
+                              ?? "Unknown"
+                    await MainActor.run {
+                        certStatuses[certCopy.folderName] = status + " (cached)"
+                    }
                 }
-            } catch { 
-                await MainActor.run { 
-                    certStatuses[certCopy.folderName] = "Check Error" 
-                } 
+
+                // 2) then fetch fresh and update (awaits network)
+                do {
+                    let parsed = try await CertChecker.checkCert(
+                        mobileProvision: mp,
+                        mobileProvisionFilename: "profile.mobileprovision",
+                        p12: p12,
+                        p12Filename: "certificate.p12",
+                        password: pw
+                    )
+
+                    let status = (parsed["certificate"] as? [String: String])?["status"]
+                              ?? (parsed["certificate_matching_status"] as? String)
+                              ?? (parsed["overall_status"] as? String)
+                              ?? "Unknown"
+
+                    await MainActor.run {
+                        certStatuses[certCopy.folderName] = status
+                    }
+                } catch {
+                    await MainActor.run {
+                        certStatuses[certCopy.folderName] = "Check Error"
+                    }
+                }
             } 
-        } 
+        }
     }
-}
     private func loadExpiries() {
         for cert in customCertificates {
             let folderName = cert.folderName
@@ -522,5 +536,6 @@ struct AddCertificateView: View {
         DispatchQueue.global(qos: .userInitiated).async(execute: workItem)
     }
 }
+
 
 
