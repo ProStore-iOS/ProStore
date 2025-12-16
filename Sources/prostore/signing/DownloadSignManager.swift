@@ -34,7 +34,7 @@ class DownloadSignManager: ObservableObject {
         
         // Validate certificate files exist
         guard let certFiles = getCertificateFiles(for: selectedCertFolder) else {
-            self.showError(message: "Certificate files not found or incomplete. Please check your certificate folder.")
+            self.showError(message: "Certificate files not found or incomplete. Please add a certificate.")
             return
         }
         
@@ -42,7 +42,7 @@ class DownloadSignManager: ObservableObject {
         let fm = FileManager.default
         let pairingFile = getAppFolder().appendingPathComponent("pairingFile.plist")
         if !fm.fileExists(atPath: pairingFile.path) {
-            self.showError(message: "Device not paired. Please complete device pairing first.")
+            self.showError(message: "Pairing file not found. Please follow setup to place pairing file in the 'ProStore' folder.")
             return
         }
 
@@ -342,4 +342,5 @@ class DownloadSignManager: ObservableObject {
         return appFolder
     }
 }
+
 
