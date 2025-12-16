@@ -163,44 +163,26 @@ struct OfficialCertificatesView: View {
             .font(.caption)
     }
  
-private func fetchTrees() {
-    Task {
-        let rootURL = URL(string: "https://api.github.com/repos/ProStore-iOS/certificates/git/trees/main")!
-        do {
-            let (data, _) = try await URLSession.shared.data(from: rootURL)
-            let decoder = JSONDecoder()
-            let response = try decoder.decode(TreeResponse.self, from: data)
-
-            let folders = response.tree.filter { $0.type == "tree" }
-
-            var validCerts: [TreeItem] = []
-
-            for folder in folders {
-                guard let folderURL = URL(string: folder.url) else { continue }
-                let (subData, _) = try await URLSession.shared.data(from: folderURL)
-                let subTree = try decoder.decode(TreeResponse.self, from: subData).tree
-
-                let hasP12 = subTree.contains { $0.path.hasSuffix(".p12") }
-                let hasProv = subTree.contains { $0.path.hasSuffix(".mobileprovision") }
-                let hasPassword = subTree.contains { $0.path == "password.txt" }
-
-                if hasP12 && hasProv && hasPassword {
-                    validCerts.append(folder)
+    private func fetchTrees() {
+        Task {
+            let url = URL(string: "https://api.github.com/repos/ProStore-iOS/certificates/git/trees/main")!
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                let decoder = JSONDecoder()
+                let response = try decoder.decode(TreeResponse.self, from: data)
+                let items = response.tree.filter { $0.type == "tree" }.sorted { $0.path < $1.path }
+                await MainActor.run {
+                    self.certItems = items
+                    self.isLoadingCerts = false
                 }
-            }
-
-            await MainActor.run {
-                self.certItems = validCerts.sorted { $0.path < $1.path }
-                self.isLoadingCerts = false
-            }
-        } catch {
-            await MainActor.run {
-                self.statusMessage = "Failed to fetch certificates: \(error.localizedDescription)"
-                self.isLoadingCerts = false
+            } catch {
+                await MainActor.run {
+                    self.statusMessage = "Failed to fetch certificates: \(error.localizedDescription)"
+                    self.isLoadingCerts = false
+                }
             }
         }
     }
-}
  
     private func fetchBlobContent(url: URL) async throws -> Data {
         let (data, _) = try await URLSession.shared.data(from: url)
@@ -300,5 +282,3 @@ private func fetchTrees() {
         }
     }
 }
-
-
