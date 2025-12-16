@@ -1,7 +1,98 @@
 import Foundation
+import CryptoKit
 
 class CertChecker {
     static let baseURL = URL(string: "https://check-p12.applep12.com/")!
+
+    // MARK: - Cache types
+    struct CacheEntry: Codable {
+        var certificate: [String: String]
+        var mobileprovision: [String: String]
+        var binding_certificate_1: [String: String]
+        var permissions: [String: String]
+        var overall_status: String
+        var timestamp: Date
+    }
+
+    private static var cacheDirectory: URL {
+        let fm = FileManager.default
+        let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let dir = caches.appendingPathComponent("CertCheckerCache", isDirectory: true)
+        if !fm.fileExists(atPath: dir.path) {
+            try? fm.createDirectory(at: dir, withIntermediateDirectories: true, attributes: nil)
+        }
+        return dir
+    }
+
+    private static func cacheFileURL(forKey key: String) -> URL {
+        return cacheDirectory.appendingPathComponent("\(key).json")
+    }
+
+    private static func makeCacheKey(p12Data: Data, mpData: Data, password: String) -> String {
+        var ctx = Data()
+        ctx.append(p12Data)
+        ctx.append(mpData)
+        if let pw = password.data(using: .utf8) {
+            ctx.append(pw)
+        }
+        let hash = SHA256.hash(data: ctx)
+        return hash.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func saveCache(key: String, parsed: [String: Any]) {
+        // Convert parsed dictionary into CacheEntry (provide sensible defaults)
+        let certificate = parsed["certificate"] as? [String: String] ?? [:]
+        let mobileprovision = parsed["mobileprovision"] as? [String: String] ?? [:]
+        let binding = parsed["binding_certificate_1"] as? [String: String] ?? [:]
+        let permissions = parsed["permissions"] as? [String: String] ?? [:]
+        let overall = (parsed["overall_status"] as? String) ?? (parsed["overallStatus"] as? String) ?? "Unknown"
+
+        let entry = CacheEntry(
+            certificate: certificate,
+            mobileprovision: mobileprovision,
+            binding_certificate_1: binding,
+            permissions: permissions,
+            overall_status: overall,
+            timestamp: Date()
+        )
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        do {
+            let data = try encoder.encode(entry)
+            try data.write(to: cacheFileURL(forKey: key), options: [.atomic])
+        } catch {
+            // silently ignore cache write errors
+            // print("CertChecker: failed to write cache: \(error)")
+        }
+    }
+
+    private static func loadCacheEntry(forKey key: String) -> CacheEntry? {
+        let url = cacheFileURL(forKey: key)
+        guard FileManager.default.fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        do {
+            let entry = try decoder.decode(CacheEntry.self, from: data)
+            return entry
+        } catch {
+            // corrupted cache — remove file
+            try? FileManager.default.removeItem(at: url)
+            return nil
+        }
+    }
+
+    private static func cacheEntryToDict(_ entry: CacheEntry) -> [String: Any] {
+        return [
+            "certificate": entry.certificate,
+            "mobileprovision": entry.mobileprovision,
+            "binding_certificate_1": entry.binding_certificate_1,
+            "permissions": entry.permissions,
+            "overall_status": entry.overall_status,
+            "cached_timestamp": ISO8601DateFormatter().string(from: entry.timestamp)
+        ]
+    }
 
     // MARK: - Token Fetching
     static func getToken() async throws -> String {
@@ -31,7 +122,7 @@ class CertChecker {
                        mpData: Data,
                        mpFilename: String,
                        password: String) async throws -> String {
-        
+
         var request = URLRequest(url: baseURL)
         request.httpMethod = "POST"
         let boundary = "Boundary-\(UUID().uuidString)"
@@ -80,8 +171,13 @@ class CertChecker {
         return String(data: data, encoding: .utf8) ?? ""
     }
 
-    // MARK: - HTML Parsing
+    // MARK: - HTML Parsing (unchanged)
     static func parseHTML(html: String) -> [String: Any] {
+        // (copy your existing parseHTML implementation here unchanged)
+        // For brevity in this snippet we call your original parseHTML implementation.
+        // Replace the following line with your full parseHTML method body.
+        // ---------------------------
+        // (Begin of original method)
         var data: [String: Any] = [
             "certificate": [String: String](),
             "mobileprovision": [String: String](),
@@ -272,15 +368,31 @@ class CertChecker {
         }
 
         return ["overall_status": fallbackStatus]
+        // (End of original method)
+        // ---------------------------
     }
 
-    // MARK: - Main Check Function
+    // MARK: - Public cache API
+
+    /// Synchronously returns the cached parsed dictionary (if any) for the supplied inputs.
+    /// Use this to show a cached result immediately while you await a fresh result.
+    static func cachedResult(p12Data: Data, mpData: Data, password: String) -> [String: Any]? {
+        let key = makeCacheKey(p12Data: p12Data, mpData: mpData, password: password)
+        guard let entry = loadCacheEntry(forKey: key) else { return nil }
+        return cacheEntryToDict(entry)
+    }
+
+    // MARK: - Main Check Function (network + cache update)
     static func checkCert(mobileProvision: Data,
                           mobileProvisionFilename: String = "example.mobileprovision",
                           p12: Data,
                           p12Filename: String = "example.p12",
                           password: String) async throws -> [String: Any] {
 
+        // compute cache key so we can update cache later
+        let key = makeCacheKey(p12Data: p12, mpData: mobileProvision, password: password)
+
+        // perform network fetch as before
         let token = try await getToken()
 
         let html = try await submit(
@@ -292,6 +404,13 @@ class CertChecker {
             password: password
         )
 
-        return parseHTML(html: html)
+        let parsed = parseHTML(html: html)
+
+        // update cache (fire-and-forget style)
+        DispatchQueue.global(qos: .background).async {
+            saveCache(key: key, parsed: parsed)
+        }
+
+        return parsed
     }
 }
