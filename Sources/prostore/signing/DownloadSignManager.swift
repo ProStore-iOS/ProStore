@@ -1,4 +1,4 @@
-// DownloadSignManager.swift - Updated version
+// DownloadSignManager.swift - Updated version (temp-wipe on all outcomes)
 import Foundation
 import Combine
 
@@ -25,19 +25,19 @@ class DownloadSignManager: ObservableObject {
         // Reset error state
         self.showError = false
         self.errorMessage = ""
-        
+
         // Validate certificate selection
         guard let selectedCertFolder = UserDefaults.standard.string(forKey: "selectedCertificateFolder") else {
             self.showError(message: "No certificate selected. Please select a certificate first.")
             return
         }
-        
+
         // Validate certificate files exist
         guard let certFiles = getCertificateFiles(for: selectedCertFolder) else {
             self.showError(message: "Certificate files not found or incomplete. Please add a certificate.")
             return
         }
-        
+
         // Check if pairing file exists (for installation)
         let fm = FileManager.default
         let pairingFile = getAppFolder().appendingPathComponent("pairingFile.plist")
@@ -80,6 +80,7 @@ class DownloadSignManager: ObservableObject {
         } catch {
             DispatchQueue.main.async {
                 self.showError(message: "Failed to create temp directory: \(error.localizedDescription)")
+                self.cleanupTempDirectory()
             }
             return
         }
@@ -103,8 +104,8 @@ class DownloadSignManager: ObservableObject {
                     self.showError(message: "Download failed: \(error.localizedDescription)")
                 }
 
-                // Clean up temp file if it exists
-                try? FileManager.default.removeItem(at: tempIPAURL)
+                // Clean up temp folder
+                self.cleanupTempDirectory()
             }
         }
     }
@@ -183,17 +184,17 @@ class DownloadSignManager: ObservableObject {
     private func getCertificateFiles(for folderName: String) -> (p12URL: URL, provURL: URL, password: String)? {
         let fm = FileManager.default
         let certsDir = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(folderName)
-        
+
         let p12URL = certsDir.appendingPathComponent("certificate.p12")
         let provURL = certsDir.appendingPathComponent("profile.mobileprovision")
         let passwordURL = certsDir.appendingPathComponent("password.txt")
-        
+
         guard fm.fileExists(atPath: p12URL.path),
               fm.fileExists(atPath: provURL.path),
               fm.fileExists(atPath: passwordURL.path) else {
             return nil
         }
-        
+
         do {
             let password = try String(contentsOf: passwordURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             return (p12URL, provURL, password)
@@ -227,12 +228,13 @@ class DownloadSignManager: ObservableObject {
                         // Start installation and track progress
                         self.startInstallation(signedIPAURL: signedIPAURL)
 
-                        // Clean up original downloaded IPA
+                        // Clean up original downloaded IPA (we keep signed IPA for install)
                         try? FileManager.default.removeItem(at: ipaURL)
 
                     case .failure(let error):
                         self.showError(message: "❌ Signing failed: \(error.localizedDescription)")
-                        try? FileManager.default.removeItem(at: ipaURL)
+                        // Clean up temp folder
+                        self.cleanupTempDirectory()
                     }
                 }
             }
@@ -269,6 +271,9 @@ class DownloadSignManager: ObservableObject {
                     self.status = "✅ Successfully installed app!"
                     self.showSuccess = true
 
+                    // Clean up temp folder now that install finished successfully
+                    self.cleanupTempDirectory()
+
                     // Hide progress bar after 5 seconds
                     DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
                         self.isProcessing = false
@@ -286,6 +291,9 @@ class DownloadSignManager: ObservableObject {
                     self.installationStream = nil
                     self.installationTask = nil
                 }
+
+                // Clean up temp folder after install error
+                self.cleanupTempDirectory()
             }
         }
     }
@@ -297,7 +305,7 @@ class DownloadSignManager: ObservableObject {
             self.errorMessage = message
             self.showError = true
             self.isProcessing = true // Keep progress bar visible
-            
+
             // Hide progress bar after 5 seconds with red state
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
                 self.isProcessing = false
@@ -305,16 +313,22 @@ class DownloadSignManager: ObservableObject {
                 self.progress = 0.0
                 self.status = ""
                 self.errorMessage = ""
-                
+
                 // Clean up any tasks
                 self.cancelTasks()
+
+                // Clean temp folder too
+                self.cleanupTempDirectory()
             }
         }
     }
 
     func cancel() {
         cancelTasks()
-        
+
+        // Ensure temp folder cleared on cancel
+        cleanupTempDirectory()
+
         DispatchQueue.main.async {
             self.isProcessing = false
             self.showSuccess = false
@@ -324,7 +338,7 @@ class DownloadSignManager: ObservableObject {
             self.errorMessage = ""
         }
     }
-    
+
     private func cancelTasks() {
         downloadTask?.cancel()
         installationTask?.cancel()
@@ -341,6 +355,32 @@ class DownloadSignManager: ObservableObject {
         }
         return appFolder
     }
+
+    // -----------------------------
+    // Temp cleanup helper
+    // -----------------------------
+    /// Removes the entire `temp` folder (and its contents) asynchronously.
+    /// Called on success, failure, or cancel so the temp folder is always wiped.
+    private func cleanupTempDirectory() {
+        let fm = FileManager.default
+        let tempDir = getAppFolder().appendingPathComponent("temp")
+
+        DispatchQueue.global(qos: .utility).async {
+            if fm.fileExists(atPath: tempDir.path) {
+                do {
+                    // Try removing the entire temp dir (fastest)
+                    try fm.removeItem(at: tempDir)
+                } catch {
+                    // Fallback: attempt to remove contents individually
+                    if let contents = try? fm.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil, options: []) {
+                        for item in contents {
+                            try? fm.removeItem(at: item)
+                        }
+                    }
+                    // Attempt to remove dir again (ignore errors)
+                    try? fm.removeItem(at: tempDir)
+                }
+            }
+        }
+    }
 }
-
-
