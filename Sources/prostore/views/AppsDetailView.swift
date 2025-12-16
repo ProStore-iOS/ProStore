@@ -229,12 +229,19 @@ public struct AppDetailView: View {
                     VStack(spacing: 8) {
                         HStack {
                             ProgressView(value: downloadManager.progress, total: 1.0)
-                                .progressViewStyle(LinearProgressViewStyle(tint: downloadManager.showSuccess ? .green : .blue))
+                                .progressViewStyle(LinearProgressViewStyle(
+                                    tint: downloadManager.showSuccess ? .green : 
+                                          (downloadManager.showError ? .red : .blue)
+                                ))
                                 .scaleEffect(x: 1, y: 1.5, anchor: .center)
                             
                             if downloadManager.showSuccess {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.green)
+                                    .font(.title2)
+                            } else if downloadManager.showError {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.red)
                                     .font(.title2)
                             } else {
                                 Text("\(Int(downloadManager.progress * 100))%")
@@ -247,13 +254,16 @@ public struct AppDetailView: View {
                         HStack {
                             Text(downloadManager.status)
                                 .font(.caption)
-                                .foregroundColor(downloadManager.showSuccess ? .green : .secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
+                                .foregroundColor(
+                                    downloadManager.showSuccess ? .green : 
+                                    (downloadManager.showError ? .red : .secondary)
+                                )
+                                .lineLimit(2) // Allow 2 lines for error messages
+                                .truncationMode(.tail)
                             
                             Spacer()
                             
-                            if !downloadManager.showSuccess {
+                            if !downloadManager.showSuccess && !downloadManager.showError {
                                 Button("Cancel") {
                                     downloadManager.cancel()
                                 }
@@ -292,5 +302,6 @@ public struct AppDetailView: View {
         }
         .animation(.easeInOut(duration: 0.3), value: downloadManager.isProcessing)
         .animation(.easeInOut(duration: 0.3), value: downloadManager.showSuccess)
+        .animation(.easeInOut(duration: 0.3), value: downloadManager.showError)
     }
 }
