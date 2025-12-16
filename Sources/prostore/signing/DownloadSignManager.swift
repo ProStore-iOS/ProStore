@@ -199,19 +199,15 @@ class DownloadSignManager: ObservableObject {
             p12URL: p12URL,
             provURL: provURL,
             p12Password: password,
-            progressUpdate: { [weak self] status, progress in
-                DispatchQueue.main.async {
-                    guard let self = self else { return }
-                    // Signing maps to the middle portion (downloadPortion .. downloadPortion + signPortion)
-                    let overallProgress = self.downloadPortion + (progress * self.signPortion)
-                    self.progress = overallProgress
-                    let percentOfSign = Int(round(progress * 100))
-                    let overallPercent = Int(round(overallProgress * 100))
-                    self.status = "Signing..."
-                    // If you want a "Signing... (xx%)" label specifically, you can use:
-                    // self.status = "Signing... (\(percentOfSign)%)"
-                }
-            },
+progressUpdate: { [weak self] status, progress in
+    DispatchQueue.main.async {
+        guard let self = self else { return }
+        let overallProgress = self.downloadPortion + (progress * self.signPortion)
+        self.progress = overallProgress
+        let percentOfSign = Int(round(progress * 100))
+        self.status = "\(status)"
+    }
+},
             completion: { [weak self] result in
                 DispatchQueue.main.async {
                     guard let self = self else { return }
@@ -314,5 +310,6 @@ class DownloadSignManager: ObservableObject {
         return appFolder
     }
 }
+
 
 
