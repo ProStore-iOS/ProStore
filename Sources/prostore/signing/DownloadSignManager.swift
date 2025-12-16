@@ -303,8 +303,5 @@ progressUpdate: { [weak self] status, progress in
         }
         return appFolder
     }
+
 }
-
-
-
-
