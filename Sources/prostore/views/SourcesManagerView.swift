@@ -37,7 +37,6 @@ struct SourcesManagerView: View {
                         }
                         .padding(.vertical, 4)
                     } else {
-                        // Normal display view
                         SourceRow(source: source)
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
@@ -48,7 +47,8 @@ struct SourcesManagerView: View {
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
-
+                            }
+                            .swipeActions(edge: .leading) {
                                 Button {
                                     sourcesViewModel.startEditing(source)
                                 } label: {
@@ -63,7 +63,7 @@ struct SourcesManagerView: View {
             } header: {
                 Text("Sources (\(sourcesViewModel.sources.count))")
             } footer: {
-                Text("Tap and hold to reorder. Swipe left to edit or delete.")
+                Text("Tap and hold to reorder. Swipe left to delete or right to edit.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -109,12 +109,6 @@ struct SourcesManagerView: View {
         .navigationTitle("Sources Manager")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button("Done") {
-                    dismiss()
-                }
-            }
-
             ToolbarItem(placement: .navigationBarTrailing) {
                 EditButton()
             }

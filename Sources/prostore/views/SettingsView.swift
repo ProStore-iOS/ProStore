@@ -37,6 +37,12 @@ struct SettingsView: View {
             avatarURL: URL(string: "https://github.com/khcrysalis.png")!
         ),
         Credit(
+            name: "S0n1c",
+            role: "IPA Installer (Used in Updater)",
+            profileURL: URL(string: "https://s0n1c.ca/")!,
+            avatarURL: URL(string: "https://files.catbox.moe/qg7h5p.png")!
+        ),
+        Credit(
             name: "AppleP12",
             role: "Certificate Status Check",
             profileURL: URL(string: "https://check-p12.applep12.com/")!,
@@ -102,7 +108,7 @@ struct SettingsView: View {
                 .listRowInsets(EdgeInsets())
 
                 // MARK: Setup
-                Section {
+                Section(header: Text("Setup")) {
                     Button("Show Setup") {
                         showingSetup = true
                     }
@@ -115,33 +121,7 @@ struct SettingsView: View {
                         SourcesManagerView()
                             .environmentObject(sourcesViewModel)
                     } label: {
-                        Label("Sources Manager", systemImage: "link")
-                    }
-                    DisclosureGroup("Current Sources") {
-                        ForEach(sourcesViewModel.sources.prefix(3)) { source in
-                            HStack {
-                                Text(source.urlString)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
-
-                                Spacer()
-
-                                // ✅ UPDATED: String-keyed validation lookup
-                                if let validationState =
-                                    sourcesViewModel.validationStates[source.urlString] {
-                                    Image(systemName: validationState.icon)
-                                        .font(.caption2)
-                                        .foregroundColor(validationState.color)
-                                }
-                            }
-                        }
-
-                        if sourcesViewModel.sources.count > 3 {
-                            Text("+ \(sourcesViewModel.sources.count - 3) more")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+                        Text("Sources Manager")
                     }
                 }
 

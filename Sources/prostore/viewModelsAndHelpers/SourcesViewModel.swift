@@ -20,8 +20,8 @@ class SourcesViewModel: ObservableObject {
             switch self {
             case .pending: return "Not checked"
             case .loading: return "Checking..."
-            case .valid: return "✓ Valid"
-            case .invalid(let error): return "✗ Error: \(error.localizedDescription)"
+            case .valid: return "Valid"
+            case .invalid(let error): return "Error: \(error.localizedDescription)"
             }
         }
         
@@ -83,7 +83,7 @@ class SourcesViewModel: ObservableObject {
                     "https://raw.githubusercontent.com/swaggyP36000/TrollStore-IPAs/main/apps_esign.json",
                     "https://ipa.cypwn.xyz/cypwn.json",
                     "https://quarksources.github.io/dist/quantumsource.min.json",
-                    "https://bit.ly/quantumsource-plus-min",
+                    "https://quarksources.github.io/dist/quantumsource%2B%2B.min.json",
                     "https://raw.githubusercontent.com/Neoncat-OG/TrollStore-IPAs/main/apps_esign.json"
                 ]
                 self.sources = defaultSources.map { Source(urlString: $0) }
@@ -103,7 +103,7 @@ class SourcesViewModel: ObservableObject {
             "https://raw.githubusercontent.com/swaggyP36000/TrollStore-IPAs/main/apps_esign.json",
             "https://ipa.cypwn.xyz/cypwn.json",
             "https://quarksources.github.io/dist/quantumsource.min.json",
-            "https://bit.ly/quantumsource-plus-min",
+            "https://quarksources.github.io/dist/quantumsource%2B%2B.min.json",
             "https://raw.githubusercontent.com/Neoncat-OG/TrollStore-IPAs/main/apps_esign.json"
         ]
         self.sources = defaultSources.map { Source(urlString: $0) }
