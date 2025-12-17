@@ -1,4 +1,3 @@
-// Replace existing SourcesManagerView with this
 import SwiftUI
 
 struct SourcesManagerView: View {
@@ -118,6 +117,12 @@ struct SourcesManagerView: View {
                     sourcesViewModel.validateAllSources()
                 } label: {
                     Image(systemName: "arrow.clockwise")
+                }
+            }
+            
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("Load Defaults") {
+                    sourcesViewModel.addDefaultSourcesIfNeeded()
                 }
             }
         }

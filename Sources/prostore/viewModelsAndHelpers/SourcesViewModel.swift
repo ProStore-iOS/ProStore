@@ -10,6 +10,17 @@ class SourcesViewModel: ObservableObject {
     
     private let fileURL: URL
     
+    private let defaultSourceURLs = [
+        "https://repository.apptesters.org/",
+        "https://wuxu1.github.io/wuxu-complete.json",
+        "https://wuxu1.github.io/wuxu-complete-plus.json",
+        "https://raw.githubusercontent.com/swaggyP36000/TrollStore-IPAs/main/apps_esign.json",
+        "https://ipa.cypwn.xyz/cypwn.json",
+        "https://quarksources.github.io/dist/quantumsource.min.json",
+        "https://quarksources.github.io/dist/quantumsource%2B%2B.min.json",
+        "https://raw.githubusercontent.com/Neoncat-OG/TrollStore-IPAs/main/apps_esign.json"
+    ]
+    
     enum ValidationState {
         case pending
         case loading
@@ -76,17 +87,7 @@ class SourcesViewModel: ObservableObject {
                 self.sources = decoded
             } else {
                 // Load default sources
-                let defaultSources = [
-                    "https://repository.apptesters.org/",
-                    "https://wuxu1.github.io/wuxu-complete.json",
-                    "https://wuxu1.github.io/wuxu-complete-plus.json",
-                    "https://raw.githubusercontent.com/swaggyP36000/TrollStore-IPAs/main/apps_esign.json",
-                    "https://ipa.cypwn.xyz/cypwn.json",
-                    "https://quarksources.github.io/dist/quantumsource.min.json",
-                    "https://quarksources.github.io/dist/quantumsource%2B%2B.min.json",
-                    "https://raw.githubusercontent.com/Neoncat-OG/TrollStore-IPAs/main/apps_esign.json"
-                ]
-                self.sources = defaultSources.map { Source(urlString: $0) }
+                self.sources = defaultSourceURLs.map { Source(urlString: $0) }
                 saveSources()
             }
         } catch {
@@ -96,17 +97,7 @@ class SourcesViewModel: ObservableObject {
     }
     
     func loadDefaultSources() {
-        let defaultSources = [
-            "https://repository.apptesters.org/",
-            "https://wuxu1.github.io/wuxu-complete.json",
-            "https://wuxu1.github.io/wuxu-complete-plus.json",
-            "https://raw.githubusercontent.com/swaggyP36000/TrollStore-IPAs/main/apps_esign.json",
-            "https://ipa.cypwn.xyz/cypwn.json",
-            "https://quarksources.github.io/dist/quantumsource.min.json",
-            "https://quarksources.github.io/dist/quantumsource%2B%2B.min.json",
-            "https://raw.githubusercontent.com/Neoncat-OG/TrollStore-IPAs/main/apps_esign.json"
-        ]
-        self.sources = defaultSources.map { Source(urlString: $0) }
+        self.sources = defaultSourceURLs.map { Source(urlString: $0) }
         saveSources()
     }
     
@@ -179,7 +170,6 @@ class SourcesViewModel: ObservableObject {
     }
     
     func validateSource(_ source: Source) {
-        // Always set to loading first
         validationStates[source.urlString] = .loading
         
         guard let url = source.url else {
@@ -213,5 +203,21 @@ class SourcesViewModel: ObservableObject {
     
     func getSourcesURLs() -> [URL] {
         sources.compactMap { $0.url }
+    }
+    
+    // MARK: - New method to add default sources without duplicates
+    func addDefaultSourcesIfNeeded() {
+        var added = false
+        for defaultURL in defaultSourceURLs {
+            if !sources.contains(where: { $0.urlString.caseInsensitiveCompare(defaultURL) == .orderedSame }) {
+                let newSource = Source(urlString: defaultURL)
+                sources.append(newSource)
+                added = true
+            }
+        }
+        if added {
+            saveSources()
+            validateAllSources()
+        }
     }
 }
