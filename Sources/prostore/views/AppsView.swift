@@ -162,8 +162,10 @@ final class RepoViewModel: ObservableObject {
     // user-controllable search & sort
     @Published var searchQuery: String = ""
     @Published var selectedSort: SortOption = .nameAZ
-    private let sourceURLs: [URL] // <-- multiple sources
+
+    private var sourceURLs: [URL] // <-- multiple sources
     private var cancellables = Set<AnyCancellable>()
+
     init(sourceURLs: [URL]) {
         self.sourceURLs = sourceURLs
         // Combine pipeline: debounce search/sort, react to cachedApps changes
@@ -191,9 +193,25 @@ final class RepoViewModel: ObservableObject {
                 let sorted: [CachedApp]
                 switch sort {
                 case .nameAZ:
-                    sorted = filtered.sorted { a, b in let pa = (a.nameLower.first?.isLetter == true ? 0 : a.nameLower.first?.isNumber == true ? 1 : (a.nameLower.first?.isPunctuation == true || a.nameLower.first?.isSymbol == true) ? 2 : 3); let pb = (b.nameLower.first?.isLetter == true ? 0 : b.nameLower.first?.isNumber == true ? 1 : (b.nameLower.first?.isPunctuation == true || b.nameLower.first?.isSymbol == true) ? 2 : 3); return pa != pb ? pa < pb : a.nameLower < b.nameLower }
+                    sorted = filtered.sorted {
+                        let pa = ( $0.nameLower.first?.isLetter == true ? 0 :
+                                   $0.nameLower.first?.isNumber == true ? 1 :
+                                   ($0.nameLower.first?.isPunctuation == true || $0.nameLower.first?.isSymbol == true) ? 2 : 3)
+                        let pb = ( $1.nameLower.first?.isLetter == true ? 0 :
+                                   $1.nameLower.first?.isNumber == true ? 1 :
+                                   ($1.nameLower.first?.isPunctuation == true || $1.nameLower.first?.isSymbol == true) ? 2 : 3)
+                        return pa != pb ? pa < pb : $0.nameLower < $1.nameLower
+                    }
                 case .nameZA:
-                    sorted = filtered.sorted { a, b in let pa = (a.nameLower.first?.isLetter == true ? 0 : a.nameLower.first?.isNumber == true ? 1 : (a.nameLower.first?.isPunctuation == true || a.nameLower.first?.isSymbol == true) ? 2 : 3); let pb = (b.nameLower.first?.isLetter == true ? 0 : b.nameLower.first?.isNumber == true ? 1 : (b.nameLower.first?.isPunctuation == true || b.nameLower.first?.isSymbol == true) ? 2 : 3); return pa != pb ? pa < pb : a.nameLower > b.nameLower }
+                    sorted = filtered.sorted {
+                        let pa = ( $0.nameLower.first?.isLetter == true ? 0 :
+                                   $0.nameLower.first?.isNumber == true ? 1 :
+                                   ($0.nameLower.first?.isPunctuation == true || $0.nameLower.first?.isSymbol == true) ? 2 : 3)
+                        let pb = ( $1.nameLower.first?.isLetter == true ? 0 :
+                                   $1.nameLower.first?.isNumber == true ? 1 :
+                                   ($1.nameLower.first?.isPunctuation == true || $1.nameLower.first?.isSymbol == true) ? 2 : 3)
+                        return pa != pb ? pa < pb : $0.nameLower > $1.nameLower
+                    }
                 case .repoAZ:
                     // sort by repo then name
                     sorted = filtered.sorted {
@@ -234,13 +252,16 @@ final class RepoViewModel: ObservableObject {
                 self?.displayedCachedApps = result
             }
             .store(in: &cancellables)
+
         Task { await loadAllSources() }
     }
+
     func loadAllSources() async {
         await MainActor.run { isLoading = true; errorMessage = nil }
         defer { Task { await MainActor.run { self.isLoading = false } } }
         var combinedApps: [AltApp] = []
         var errors: [String] = []
+
         for url in sourceURLs {
             do {
                 var request = URLRequest(url: url)
@@ -347,9 +368,11 @@ final class RepoViewModel: ObservableObject {
             seen.insert(app.bundleIdentifier)
             return true
         }
+
         await MainActor.run {
             self.apps = deduped
         }
+
         // compute cachedApps off-main
         Task.detached { [deduped] in
             let cached = deduped.map { CachedApp(app: $0) }
@@ -357,14 +380,26 @@ final class RepoViewModel: ObservableObject {
                 self.cachedApps = cached
             }
         }
+
         if !errors.isEmpty {
             await MainActor.run {
                 self.errorMessage = errors.joined(separator: "\n")
             }
         }
     }
+
     func refresh() {
         Task { await loadAllSources() }
+    }
+
+    // NEW method to update source URLs and reload only if changed
+    func updateSourceURLs(_ newURLs: [URL]) {
+        if Set(sourceURLs) != Set(newURLs) {
+            self.sourceURLs = newURLs
+            Task {
+                await loadAllSources()
+            }
+        }
     }
 }
 // MARK: - RetryAsyncImage (stable layout + retry)
@@ -485,13 +520,14 @@ enum SortOption: String, CaseIterable, Identifiable {
 }
 // MARK: - AppsView (updated to use cached + vm search/sort)
 public struct AppsView: View {
+    @EnvironmentObject var sourcesViewModel: SourcesViewModel
     @StateObject private var vm: RepoViewModel
     @FocusState private var searchFieldFocused: Bool
     @State private var selectedApp: AltApp? = nil
-    /// Which repositories are expanded (by repository key string).
     @State private var expandedRepos: Set<String> = []
-    public init(repoURLs: [URL] = [URL(string: "https://repository.apptesters.org/")!]) {
-        _vm = StateObject(wrappedValue: RepoViewModel(sourceURLs: repoURLs))
+    
+    public init() {
+        _vm = StateObject(wrappedValue: RepoViewModel(sourceURLs: []))
     }
     // MARK: - Helpers using cached data (fast)
     private var cachedList: [CachedApp] { vm.displayedCachedApps }
@@ -669,23 +705,14 @@ public struct AppsView: View {
             }
         }
         .onAppear {
-            // init expansion only when repo sort selected
-            expandedRepos = (vm.selectedSort == .repoAZ) ? Set(orderedRepoKeys) : []
+            // Update VM with current sources
+            let urls = sourcesViewModel.getSourcesURLs()
+            vm.updateSourceURLs(urls)
         }
-        // update expanded repos when displayed data changes or sort toggles
-        .onReceive(vm.$displayedCachedApps) { _ in
-            if vm.selectedSort == .repoAZ {
-                expandedRepos.formUnion(orderedRepoKeys)
-            } else {
-                expandedRepos.removeAll()
-            }
-        }
-        .onChange(of: vm.selectedSort) { newOption in
-            if newOption == .repoAZ {
-                expandedRepos.formUnion(orderedRepoKeys)
-            } else {
-                expandedRepos.removeAll()
-            }
+        .onChange(of: sourcesViewModel.sources) { _ in
+            // Refresh when sources change
+            let urls = sourcesViewModel.getSourcesURLs()
+            vm.updateSourceURLs(urls)
         }
     }
 }

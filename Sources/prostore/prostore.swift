@@ -17,6 +17,7 @@ struct ProStore: App {
 }
 
 struct MainSidebarView: View {
+    @StateObject private var sourcesViewModel = SourcesViewModel()
     @State private var selected: SidebarItem? = .store
 
     var body: some View {
@@ -46,22 +47,15 @@ struct MainSidebarView: View {
                 }
             case .store:
                 NavigationStack {
-                    AppsView(repoURLs: [
-                        URL(string: "https://repository.apptesters.org/")!,
-                        URL(string: "https://wuxu1.github.io/wuxu-complete.json")!,
-                        URL(string: "https://wuxu1.github.io/wuxu-complete-plus.json")!,
-                        URL(string: "https://raw.githubusercontent.com/swaggyP36000/TrollStore-IPAs/main/apps_esign.json")!,
-                        URL(string: "https://ipa.cypwn.xyz/cypwn.json")!,
-                        URL(string: "https://quarksources.github.io/dist/quantumsource.min.json")!,
-                        URL(string: "https://bit.ly/quantumsource-plus-min")!,
-                        URL(string: "https://raw.githubusercontent.com/Neoncat-OG/TrollStore-IPAs/main/apps_esign.json")!
-                    ])
+                    AppsView()
+                        .environmentObject(sourcesViewModel)
                         .navigationTitle("Store")
                         .navigationBarTitleDisplayMode(.large)
                 }
             case .settings:
                 NavigationStack {
                     SettingsView()
+                        .environmentObject(sourcesViewModel)
                         .navigationTitle("Settings")
                         .navigationBarTitleDisplayMode(.large)
                 }
@@ -85,6 +79,3 @@ enum SidebarItem: Hashable {
     case settings
 
 }
-
-
-

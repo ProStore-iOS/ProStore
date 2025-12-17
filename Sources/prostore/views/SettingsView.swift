@@ -10,6 +10,10 @@ struct Credit: Identifiable {
 }
 
 struct SettingsView: View {
+    @EnvironmentObject var sourcesViewModel: SourcesViewModel
+    @State private var showingSourcesManager = false
+    @State private var showingSetup = false
+    
     private let credits: [Credit] = [
         Credit(
             name: "SuperGamer474",
@@ -44,8 +48,6 @@ struct SettingsView: View {
     private var versionString: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
     }
-
-    @State private var showingSetup = false
 
     var body: some View {
         NavigationStack {
@@ -85,12 +87,43 @@ struct SettingsView: View {
                 .padding(.vertical, 20)
                 .listRowInsets(EdgeInsets())
 
-                
                 Section {
                     Button("Show Setup") {
                         showingSetup = true
                     }
                     .buttonStyle(.borderedProminent)
+                }
+
+                Section(header: Text("Sources")) {
+                    NavigationLink {
+                        SourcesManagerView()
+                    } label: {
+                        Label("Sources Manager", systemImage: "link")
+                    }
+                    
+                    DisclosureGroup("Current Sources") {
+                        ForEach(sourcesViewModel.sources.prefix(3)) { source in
+                            HStack {
+                                Text(source.urlString)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                                Spacer()
+                                if let url = source.url,
+                                   let validationState = sourcesViewModel.validationStates[url] {
+                                    Image(systemName: validationState.icon)
+                                        .font(.caption2)
+                                        .foregroundColor(validationState.color)
+                                }
+                            }
+                        }
+                        
+                        if sourcesViewModel.sources.count > 3 {
+                            Text("+ \(sourcesViewModel.sources.count - 3) more")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
 
                 Section(header: Text("Credits")) {
@@ -100,6 +133,11 @@ struct SettingsView: View {
                 }
             }
             .listStyle(InsetGroupedListStyle())
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.large)
+            .onAppear {
+                sourcesViewModel.validateAllSources()
+            }
         }
         .sheet(isPresented: $showingSetup) {
             SetupView(onComplete: { showingSetup = false })
