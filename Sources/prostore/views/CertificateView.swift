@@ -296,7 +296,7 @@ struct CertificateView: View {
                                   ?? (cached["overall_status"] as? String)
                                   ?? "Unknown"
                         await MainActor.run {
-                            certStatuses[certCopy.folderName] = status + " (cached)"
+                            certStatuses[certCopy.folderName] = status
                         }
                     }
 
@@ -570,3 +570,4 @@ struct AddCertificateView: View {
         DispatchQueue.global(qos: .userInitiated).async(execute: workItem)
     }
 }
+
