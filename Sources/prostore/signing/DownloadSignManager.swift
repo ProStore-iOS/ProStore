@@ -1,4 +1,4 @@
-// DownloadSignManager.swift - Updated version (temp-wipe on all outcomes)
+// DownloadSignManager.swift - Fixed version with single temp directory
 import Foundation
 import Combine
 
@@ -16,6 +16,10 @@ class DownloadSignManager: ObservableObject {
     private var installationStream: AsyncThrowingStream<(progress: Double, status: String), Error>?
     private var installationTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
+    
+    // Single session temp directory
+    private var sessionTempDir: URL?
+    private let sessionID = UUID().uuidString
 
     // Portion split (tweak if you want different ratios)
     private let downloadPortion: Double = 0.33
@@ -57,6 +61,9 @@ class DownloadSignManager: ObservableObject {
         self.status = "Starting download..."
         self.showSuccess = false
 
+        // Create session temp directory
+        createSessionTempDirectory()
+        
         DispatchQueue.global(qos: .userInitiated).async {
             self.performDownloadAndSign(
                 downloadURL: downloadURL,
@@ -68,27 +75,34 @@ class DownloadSignManager: ObservableObject {
         }
     }
 
-    private func performDownloadAndSign(downloadURL: URL, appName: String, p12URL: URL, provURL: URL, password: String) {
-        // Step 1: Setup directories
+    private func createSessionTempDirectory() {
         let fm = FileManager.default
-        let appFolder = self.getAppFolder()
-        let tempDir = appFolder.appendingPathComponent("temp")
-
+        let sessionTempDir = fm.temporaryDirectory
+            .appendingPathComponent("ProStore")
+            .appendingPathComponent("session_\(sessionID)")
+        
         do {
-            if !fm.fileExists(atPath: tempDir.path) {
-                try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+            if fm.fileExists(atPath: sessionTempDir.path) {
+                try fm.removeItem(at: sessionTempDir)
             }
+            try fm.createDirectory(at: sessionTempDir, withIntermediateDirectories: true)
+            self.sessionTempDir = sessionTempDir
         } catch {
+            print("Failed to create session temp directory: \(error)")
+        }
+    }
+
+    private func performDownloadAndSign(downloadURL: URL, appName: String, p12URL: URL, provURL: URL, password: String) {
+        guard let sessionTempDir = sessionTempDir else {
             DispatchQueue.main.async {
-                self.showError(message: "Failed to create temp directory: \(error.localizedDescription)")
-                self.cleanupTempDirectory()
+                self.showError(message: "Failed to create temporary directory")
             }
             return
         }
 
-        let tempIPAURL = tempDir.appendingPathComponent("\(UUID().uuidString).ipa")
+        let tempIPAURL = sessionTempDir.appendingPathComponent("download.ipa")
 
-        // Step 2: Download the IPA (with progress)
+        // Step 1: Download the IPA (with progress)
         self.downloadIPA(from: downloadURL, to: tempIPAURL) { [weak self] result in
             guard let self = self else { return }
 
@@ -97,16 +111,14 @@ class DownloadSignManager: ObservableObject {
 
             switch result {
             case .success:
-                // Step 3: Sign the IPA
-                self.signIPA(ipaURL: tempIPAURL, p12URL: p12URL, provURL: provURL, password: password, appName: appName)
+                // Step 2: Sign the IPA
+                self.signIPA(ipaURL: tempIPAURL, p12URL: p12URL, provURL: provURL, 
+                           password: password, appName: appName, sessionTempDir: sessionTempDir)
 
             case .failure(let error):
                 DispatchQueue.main.async {
                     self.showError(message: "Download failed: \(error.localizedDescription)")
                 }
-
-                // Clean up temp folder
-                self.cleanupTempDirectory()
             }
         }
     }
@@ -138,17 +150,19 @@ class DownloadSignManager: ObservableObject {
             }
 
             guard let tempLocalURL = tempLocalURL else {
-                let err = NSError(domain: "DownloadSignManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "No temp file URL"])
+                let err = NSError(domain: "DownloadSignManager", code: -1, 
+                                userInfo: [NSLocalizedDescriptionKey: "No temp file URL"])
                 completion(.failure(err))
                 return
             }
 
             do {
                 // If destination exists, remove it
-                if FileManager.default.fileExists(atPath: destinationURL.path) {
-                    try FileManager.default.removeItem(at: destinationURL)
+                let fm = FileManager.default
+                if fm.fileExists(atPath: destinationURL.path) {
+                    try fm.removeItem(at: destinationURL)
                 }
-                try FileManager.default.moveItem(at: tempLocalURL, to: destinationURL)
+                try fm.moveItem(at: tempLocalURL, to: destinationURL)
 
                 DispatchQueue.main.async {
                     // make sure progress reflects completed download within its portion
@@ -204,8 +218,12 @@ class DownloadSignManager: ObservableObject {
         }
     }
 
-    private func signIPA(ipaURL: URL, p12URL: URL, provURL: URL, password: String, appName: String) {
-        signer.sign(
+    private func signIPA(ipaURL: URL, p12URL: URL, provURL: URL, password: String, appName: String, sessionTempDir: URL) {
+        // Update signer to use session temp directory
+        let updatedSigner = SigningManager.shared
+        updatedSigner.setSessionTempDir(sessionTempDir)
+        
+        updatedSigner.sign(
             ipaURL: ipaURL,
             p12URL: p12URL,
             provURL: provURL,
@@ -215,7 +233,6 @@ class DownloadSignManager: ObservableObject {
                     guard let self = self else { return }
                     let overallProgress = self.downloadPortion + (progress * self.signPortion)
                     self.progress = overallProgress
-                    let percentOfSign = Int(round(progress * 100))
                     self.status = "\(status)"
                 }
             },
@@ -229,13 +246,8 @@ class DownloadSignManager: ObservableObject {
                         // Start installation and track progress
                         self.startInstallation(signedIPAURL: signedIPAURL)
 
-                        // Clean up original downloaded IPA (we keep signed IPA for install)
-                        try? FileManager.default.removeItem(at: ipaURL)
-
                     case .failure(let error):
                         self.showError(message: "❌ Signing failed: \(error.localizedDescription)")
-                        // Clean up temp folder
-                        self.cleanupTempDirectory()
                     }
                 }
             }
@@ -255,14 +267,7 @@ class DownloadSignManager: ObservableObject {
                         // Installation maps to final portion:
                         let overallProgress = self.downloadPortion + self.signPortion + (installProgress * self.installPortion)
                         self.progress = overallProgress
-
-                        let percent = Int(round(overallProgress * 100))
-                        if installStatus.contains("Successfully") {
-                            self.status = installStatus
-                            self.showSuccess = true
-                        } else {
-                            self.status = "\(installStatus)"
-                        }
+                        self.status = "\(installStatus)"
                     }
                 }
 
@@ -272,17 +277,15 @@ class DownloadSignManager: ObservableObject {
                     self.status = "✅ Successfully installed app!"
                     self.showSuccess = true
 
-                    // Clean up temp folder now that install finished successfully
-                    self.cleanupTempDirectory()
-
-                    // Hide progress bar after 5 seconds
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                    // Hide progress bar after 3 seconds and cleanup
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                         self.isProcessing = false
                         self.showSuccess = false
                         self.progress = 0.0
                         self.status = ""
                         self.installationStream = nil
                         self.installationTask = nil
+                        self.cleanupSessionTempDirectory()
                     }
                 }
 
@@ -291,10 +294,8 @@ class DownloadSignManager: ObservableObject {
                     self.showError(message: "❌ Install failed: \(error.localizedDescription)")
                     self.installationStream = nil
                     self.installationTask = nil
+                    self.cleanupSessionTempDirectory()
                 }
-
-                // Clean up temp folder after install error
-                self.cleanupTempDirectory()
             }
         }
     }
@@ -319,16 +320,14 @@ class DownloadSignManager: ObservableObject {
                 self.cancelTasks()
 
                 // Clean temp folder too
-                self.cleanupTempDirectory()
+                self.cleanupSessionTempDirectory()
             }
         }
     }
 
     func cancel() {
         cancelTasks()
-
-        // Ensure temp folder cleared on cancel
-        cleanupTempDirectory()
+        cleanupSessionTempDirectory()
 
         DispatchQueue.main.async {
             self.isProcessing = false
@@ -358,30 +357,22 @@ class DownloadSignManager: ObservableObject {
     }
 
     // -----------------------------
-    // Temp cleanup helper
+    // Session temp directory cleanup
     // -----------------------------
-    /// Removes the entire `temp` folder (and its contents) asynchronously.
-    /// Called on success, failure, or cancel so the temp folder is always wiped.
-    private func cleanupTempDirectory() {
-        let fm = FileManager.default
-        let tempDir = getAppFolder().appendingPathComponent("temp")
-
+    private func cleanupSessionTempDirectory() {
+        guard let sessionTempDir = sessionTempDir else { return }
+        
         DispatchQueue.global(qos: .utility).async {
-            if fm.fileExists(atPath: tempDir.path) {
+            let fm = FileManager.default
+            if fm.fileExists(atPath: sessionTempDir.path) {
                 do {
-                    // Try removing the entire temp dir (fastest)
-                    try fm.removeItem(at: tempDir)
+                    try fm.removeItem(at: sessionTempDir)
+                    print("Cleaned up session temp directory: \(sessionTempDir.path)")
                 } catch {
-                    // Fallback: attempt to remove contents individually
-                    if let contents = try? fm.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil, options: []) {
-                        for item in contents {
-                            try? fm.removeItem(at: item)
-                        }
-                    }
-                    // Attempt to remove dir again (ignore errors)
-                    try? fm.removeItem(at: tempDir)
+                    print("Failed to clean up session temp directory: \(error)")
                 }
             }
         }
+        self.sessionTempDir = nil
     }
 }
