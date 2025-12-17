@@ -113,10 +113,10 @@ struct SettingsView: View {
                 Section(header: Text("Sources")) {
                     NavigationLink {
                         SourcesManagerView()
+                            .environmentObject(sourcesViewModel)
                     } label: {
                         Label("Sources Manager", systemImage: "link")
                     }
-
                     DisclosureGroup("Current Sources") {
                         ForEach(sourcesViewModel.sources.prefix(3)) { source in
                             HStack {
