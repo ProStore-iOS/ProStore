@@ -1,3 +1,5 @@
+import SwiftUI
+
 struct SourceRow: View {
     let source: SourcesViewModel.Source
     @EnvironmentObject var sourcesViewModel: SourcesViewModel
