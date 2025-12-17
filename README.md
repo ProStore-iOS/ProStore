@@ -69,26 +69,19 @@ The **best** alternative app store for iOS!
 ## To-do list
 
 - [ ] Pairing file selection menu
-- [ ] Modify Sources for the Store
+- [x] Sources Manager
 - [ ] Add IPA Manager
-- [ ] Create settings view
-- [ ] Add second install mode: OTA Install
+- [x] Create settings view (Replace About)
+- [ ] Add second install option: OTA Install
 
 ---
 
 ## Credits
 - **SuperGamer474** — Developer  
-- **[Khcrysalis](https://github.com/khcrysalis/) & [Zhlynn](https://github.com/zhlynn/)** - Creator of the [Zsign Package](https://github.com/khcrysalis/Zsign-Package)
+- **[Khcrysalis](https://github.com/khcrysalis/) & [Zhlynn](https://github.com/zhlynn/)** - Creator of the [Zsign Package](https://github.com/khcrysalis/Zsign-Package)  
 - **[Khcrysalis](https://github.com/khcrysalis/)** - [iDeviceKit](https://github.com/khcrysalis/idevicekit)  
-- **[Loyahdev](https://github.com/loyahdev/)** - Official ProStore [certificates](https://github.com/loyahdev/certificates) provider!
+- **[Loyahdev](https://github.com/loyahdev/)** - Official ProStore [certificates](https://github.com/loyahdev/certificates) provider!  
+- **[S0n1c](https://s0n1c.ca/)** - ProStore updater & installer  
 - **[AppleP12](https://check-p12.applep12.com/)** - Certificate Checker and Status
 
 ---
-
-
-
-
-
-
-
-
