@@ -178,31 +178,34 @@ class SourcesViewModel: ObservableObject {
         newSourceURL = ""
     }
     
-    func validateSource(_ source: Source) {
-        guard let url = source.url else {
-            validationStates[source.urlString] = .invalid(NSError(domain: "Invalid URL", code: 0, userInfo: nil))
-            return
+func validateSource(_ source: Source) {
+    guard let url = source.url else {
+        // Create a placeholder URL for invalid URL strings to store validation state
+        if let placeholderURL = URL(string: "invalid://" + source.urlString.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!) {
+            validationStates[placeholderURL] = .invalid(NSError(domain: "Invalid URL", code: 0, userInfo: nil))
         }
-        
-        validationStates[url] = .loading
-        
-        var request = URLRequest(url: url)
-        request.setValue("AppTestersListView/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
-        request.timeoutInterval = 10
-        
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            DispatchQueue.main.async {
-                if let error = error {
-                    self?.validationStates[url] = .invalid(error)
-                } else if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
-                    let error = NSError(domain: "HTTP Error", code: httpResponse.statusCode, userInfo: nil)
-                    self?.validationStates[url] = .invalid(error)
-                } else {
-                    self?.validationStates[url] = .valid
-                }
-            }
-        }.resume()
+        return
     }
+    
+    validationStates[url] = .loading
+    
+    var request = URLRequest(url: url)
+    request.setValue("AppTestersListView/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
+    request.timeoutInterval = 10
+    
+    URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+        DispatchQueue.main.async {
+            if let error = error {
+                self?.validationStates[url] = .invalid(error)
+            } else if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                let error = NSError(domain: "HTTP Error", code: httpResponse.statusCode, userInfo: nil)
+                self?.validationStates[url] = .invalid(error)
+            } else {
+                self?.validationStates[url] = .valid
+            }
+        }
+    }.resume()
+}
     
     func validateAllSources() {
         for source in sources {

@@ -2,6 +2,7 @@
 import Foundation
 import Combine
 
+@MainActor
 class DownloadSignManager: ObservableObject {
     @Published var progress: Double = 0.0
     @Published var status: String = ""
