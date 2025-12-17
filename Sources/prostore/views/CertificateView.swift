@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+
 // Centralized types to avoid conflicts
 struct CertificateFileItem {
     var name: String = ""
@@ -10,6 +11,7 @@ struct CustomCertificate: Identifiable {
     let displayName: String
     let folderName: String
 }
+
 // MARK: - Date Extension for Formatting
 extension Date {
     func formattedWithOrdinal() -> String {
@@ -39,8 +41,10 @@ extension Date {
         return "\(number)\(suffix)"
     }
 }
+
 // MARK: - CertificateView (List + Add/Edit launchers)
 struct CertificateView: View {
+    // MARK: - State
     @State private var customCertificates: [CustomCertificate] = []
     @State private var certExpiries: [String: Date?] = [:]
     @State private var certStatuses: [String: String] = [:]
@@ -51,6 +55,8 @@ struct CertificateView: View {
     @State private var showingDeleteAlert = false
     @State private var certToDelete: CustomCertificate?
     @State private var newlyAddedFolder: String? = nil
+
+    // MARK: - Body
     var body: some View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 20) {
@@ -117,6 +123,8 @@ struct CertificateView: View {
             reloadCertificatesAndEnsureSelection()
         }
     }
+
+    // MARK: - UI helpers
     private func certificateItem(for cert: CustomCertificate) -> some View {
         ZStack(alignment: .top) {
             certificateContent(for: cert)
@@ -135,6 +143,7 @@ struct CertificateView: View {
             certificateButtons(for: cert)
         }
     }
+
     private func certificateContent(for cert: CustomCertificate) -> some View {
         VStack(alignment: .center, spacing: 12) {
             Text(cert.displayName)
@@ -167,6 +176,7 @@ struct CertificateView: View {
                 .stroke(selectedCert == cert.folderName ? Color.blue : Color.clear, lineWidth: 3)
         )
     }
+
     private func expiryDisplay(for expiry: Date) -> some View {
         let now = Date()
         let components = Calendar.current.dateComponents([.day], from: now, to: expiry)
@@ -184,6 +194,7 @@ struct CertificateView: View {
             .fontWeight(.medium)
             .foregroundColor(.primary)
     }
+
     private func certificateBackground(for cert: CustomCertificate) -> Color {
         let status = certStatuses[cert.folderName] ?? "Unknown"
         if status == "Revoked" {
@@ -204,6 +215,7 @@ struct CertificateView: View {
             return .green.opacity(0.15)
         }
     }
+
     private func certificateButtons(for cert: CustomCertificate) -> some View {
         HStack {
             Button(action: {
@@ -217,9 +229,9 @@ struct CertificateView: View {
                     .background(Color(.systemGray6).opacity(0.8))
                     .clipShape(Circle())
             }
-     
+
             Spacer()
-     
+
             Button(action: {
                 if customCertificates.count > 1 {
                     certToDelete = cert
@@ -238,72 +250,102 @@ struct CertificateView: View {
         .padding(.top, 12)
         .padding(.horizontal, 12)
     }
-private func reloadCertificatesAndEnsureSelection() {
-    customCertificates = CertificateFileManager.shared.loadCertificates()
-    
-    selectedCert = UserDefaults.standard.string(forKey: "selectedCertificateFolder")
-    ensureSelection()
-    loadExpiries()
-    
-    for cert in customCertificates { 
-        let certCopy = cert
-        Task<Void, Never> { 
-            do {
-                let dir = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(certCopy.folderName)
-                
-                // Check if files exist
-                let p12URL = dir.appendingPathComponent("certificate.p12")
-                let mpURL = dir.appendingPathComponent("profile.mobileprovision")
-                let pwURL = dir.appendingPathComponent("password.txt")
-                
-                let fileManager = FileManager.default
-                let p12Exists = fileManager.fileExists(atPath: p12URL.path)
-                let mpExists = fileManager.fileExists(atPath: mpURL.path)
-                let pwExists = fileManager.fileExists(atPath: pwURL.path)
-                
-                if !p12Exists || !mpExists || !pwExists {
-                    await MainActor.run { 
-                        certStatuses[certCopy.folderName] = "Missing Files" 
+
+    // MARK: - Certificate loading & status
+    private func reloadCertificatesAndEnsureSelection() {
+        customCertificates = CertificateFileManager.shared.loadCertificates()
+
+        selectedCert = UserDefaults.standard.string(forKey: "selectedCertificateFolder")
+        ensureSelection()
+        loadExpiries()
+
+        for cert in customCertificates {
+            let certCopy = cert
+
+            Task {
+                do {
+                    let dir = CertificateFileManager.shared.certificatesDirectory
+                        .appendingPathComponent(certCopy.folderName)
+
+                    // Check if files exist
+                    let p12URL = dir.appendingPathComponent("certificate.p12")
+                    let mpURL = dir.appendingPathComponent("profile.mobileprovision")
+                    let pwURL = dir.appendingPathComponent("password.txt")
+
+                    let fileManager = FileManager.default
+                    let p12Exists = fileManager.fileExists(atPath: p12URL.path)
+                    let mpExists = fileManager.fileExists(atPath: mpURL.path)
+                    let pwExists = fileManager.fileExists(atPath: pwURL.path)
+
+                    if !p12Exists || !mpExists || !pwExists {
+                        await MainActor.run {
+                            certStatuses[certCopy.folderName] = "Missing Files"
+                        }
+                        return
                     }
-                    return
+
+                    // Read files (safe inside Task)
+                    let p12 = try Data(contentsOf: p12URL)
+                    let mp = try Data(contentsOf: mpURL)
+                    let pw = (try? String(contentsOf: pwURL, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+                    // 1) show cached immediately (if available)
+                    if let cached = CertChecker.cachedResult(p12Data: p12, mpData: mp, password: pw) {
+                        let status = (cached["certificate"] as? [String: String])?["status"]
+                                  ?? (cached["certificate_matching_status"] as? String)
+                                  ?? (cached["overall_status"] as? String)
+                                  ?? "Unknown"
+                        await MainActor.run {
+                            certStatuses[certCopy.folderName] = status + " (cached)"
+                        }
+                    }
+
+                    // 2) then fetch fresh and update (awaits network)
+                    do {
+                        let parsed = try await CertChecker.checkCert(
+                            mobileProvision: mp,
+                            mobileProvisionFilename: "profile.mobileprovision",
+                            p12: p12,
+                            p12Filename: "certificate.p12",
+                            password: pw
+                        )
+
+                        let status = (parsed["certificate"] as? [String: String])?["status"]
+                                  ?? (parsed["certificate_matching_status"] as? String)
+                                  ?? (parsed["overall_status"] as? String)
+                                  ?? "Unknown"
+
+                        await MainActor.run {
+                            certStatuses[certCopy.folderName] = status
+                        }
+                    } catch {
+                        await MainActor.run {
+                            certStatuses[certCopy.folderName] = "Check Error"
+                        }
+                    }
+                } catch {
+                    await MainActor.run {
+                        certStatuses[certCopy.folderName] = "Check Error"
+                    }
                 }
-                
-                let p12 = try Data(contentsOf: p12URL)
-                let mp = try Data(contentsOf: mpURL)
-                let pw = (try? String(contentsOf: pwURL, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                
-                let parsed = try await CertChecker.checkCert(
-                    mobileProvision: mp, 
-                    mobileProvisionFilename: "profile.mobileprovision", 
-                    p12: p12, 
-                    p12Filename: "certificate.p12", 
-                    password: pw
-                )
-                
-                let status = (parsed["certificate"] as? [String: String])?["status"] ?? 
-                            (parsed["certificate_matching_status"] as? String) ?? 
-                            "Unknown"
-                
-                await MainActor.run { 
-                    certStatuses[certCopy.folderName] = status 
-                }
-            } catch { 
-                await MainActor.run { 
-                    certStatuses[certCopy.folderName] = "Check Error" 
-                } 
-            } 
-        } 
+            }
+        }
     }
-}
+
+    // MARK: - Helpers (moved out of reloadCertificatesAndEnsureSelection)
     private func loadExpiries() {
         for cert in customCertificates {
             let folderName = cert.folderName
             let certDir = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(folderName)
             let provURL = certDir.appendingPathComponent("profile.mobileprovision")
+
+            // signer.getExpirationDate(provURL:) is presumed synchronous in your project.
+            // If it's async change this to Task + await accordingly.
             let expiry = signer.getExpirationDate(provURL: provURL)
             certExpiries[folderName] = expiry
         }
     }
+
     private func ensureSelection() {
         if selectedCert == nil || !customCertificates.contains(where: { $0.folderName == selectedCert }) {
             if let firstCert = customCertificates.first {
@@ -312,10 +354,11 @@ private func reloadCertificatesAndEnsureSelection() {
             }
         }
     }
+
     private func deleteCertificate(_ cert: CustomCertificate) {
         try? CertificateFileManager.shared.deleteCertificate(folderName: cert.folderName)
         customCertificates = CertificateFileManager.shared.loadCertificates()
- 
+
         if selectedCert == cert.folderName {
             if let newSelection = customCertificates.first {
                 selectedCert = newSelection.folderName
@@ -329,6 +372,7 @@ private func reloadCertificatesAndEnsureSelection() {
         loadExpiries()
     }
 }
+
 // MARK: - Add / Edit View
 struct AddCertificateView: View {
     @Environment(\.dismiss) private var dismiss
@@ -342,10 +386,12 @@ struct AddCertificateView: View {
     @State private var errorMessage = ""
     @State private var displayName: String = ""
     @State private var hasLoadedForEdit = false
+
     init(editingCertificate: CustomCertificate? = nil, onSave: ((String) -> Void)? = nil) {
         self.editingCertificate = editingCertificate
         self.onSave = onSave
     }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -364,7 +410,7 @@ struct AddCertificateView: View {
                         }
                     }
                     .disabled(isChecking)
-             
+
                     Button(action: { activeSheet = .prov }) {
                         HStack {
                             Image(systemName: "gearshape.fill")
@@ -380,12 +426,12 @@ struct AddCertificateView: View {
                     }
                     .disabled(isChecking)
                 }
-         
+
                 Section(header: Text("Display Name")) {
                     TextField("Optional Display Name", text: $displayName)
                         .disabled(isChecking)
                 }
-         
+
                 Section(header: Text("Password")) {
                     SecureField("Enter Password", text: $password)
                         .disabled(isChecking)
@@ -393,7 +439,7 @@ struct AddCertificateView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-         
+
                 if !errorMessage.isEmpty {
                     Text(errorMessage)
                         .foregroundColor(.red)
@@ -440,16 +486,17 @@ struct AddCertificateView: View {
             }
         }
     }
+
     private func loadForEdit(cert: CustomCertificate) {
         let certFolder = CertificateFileManager.shared.certificatesDirectory.appendingPathComponent(cert.folderName)
         let p12URL = certFolder.appendingPathComponent("certificate.p12")
         let provURL = certFolder.appendingPathComponent("profile.mobileprovision")
         let passwordURL = certFolder.appendingPathComponent("password.txt")
         let nameURL = certFolder.appendingPathComponent("name.txt")
- 
+
         p12File = CertificateFileItem(name: "certificate.p12", url: p12URL)
         provFile = CertificateFileItem(name: "profile.mobileprovision", url: provURL)
- 
+
         if let pwData = try? Data(contentsOf: passwordURL), let pw = String(data: pwData, encoding: .utf8) {
             password = pw
         }
@@ -457,12 +504,13 @@ struct AddCertificateView: View {
             displayName = nameStr
         }
     }
+
     private func saveCertificate() {
         guard let p12URL = p12File?.url, let provURL = provFile?.url else { return }
- 
+
         isChecking = true
         errorMessage = ""
- 
+
         let workItem: DispatchWorkItem = DispatchWorkItem {
             do {
                 var p12Data: Data
@@ -481,10 +529,10 @@ struct AddCertificateView: View {
                     p12Data = try Data(contentsOf: p12URL)
                     provData = try Data(contentsOf: provURL)
                 }
-         
+
                 let checkResult = CertificatesManager.check(p12Data: p12Data, password: self.password, mobileProvisionData: provData)
                 var dispatchError: String?
-         
+
                 switch checkResult {
                 case .success(.success):
                     if localDisplayName.isEmpty {
@@ -503,7 +551,7 @@ struct AddCertificateView: View {
                 case .failure(let error):
                     dispatchError = "Error: \(error.localizedDescription)"
                 }
-         
+
                 DispatchQueue.main.async {
                     self.isChecking = false
                     if let err = dispatchError {
@@ -522,4 +570,3 @@ struct AddCertificateView: View {
         DispatchQueue.global(qos: .userInitiated).async(execute: workItem)
     }
 }
-
