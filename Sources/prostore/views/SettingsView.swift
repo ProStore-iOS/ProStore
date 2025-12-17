@@ -1,4 +1,4 @@
-// AboutView.swift
+// SettingsView.swift
 import SwiftUI
 
 struct Credit: Identifiable {
@@ -9,7 +9,7 @@ struct Credit: Identifiable {
     var avatarURL: URL
 }
 
-struct AboutView: View {
+struct SettingsView: View {
     private let credits: [Credit] = [
         Credit(
             name: "SuperGamer474",
@@ -85,17 +85,18 @@ struct AboutView: View {
                 .padding(.vertical, 20)
                 .listRowInsets(EdgeInsets())
 
-                Section(header: Text("Credits")) {
-                    ForEach(credits) { c in
-                        CreditRow(credit: c)
-                    }
-                }
-
+                
                 Section {
                     Button("Show Setup") {
                         showingSetup = true
                     }
                     .buttonStyle(.borderedProminent)
+                }
+
+                Section(header: Text("Credits")) {
+                    ForEach(credits) { c in
+                        CreditRow(credit: c)
+                    }
                 }
             }
             .listStyle(InsetGroupedListStyle())

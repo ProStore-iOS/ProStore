@@ -31,8 +31,8 @@ struct MainSidebarView: View {
                 NavigationLink(value: SidebarItem.updater) {
                     Label("Updater", systemImage: "square.and.arrow.down")
                 }
-                NavigationLink(value: SidebarItem.about) {
-                    Label("About", systemImage: "info.circle")
+                NavigationLink(value: SidebarItem.settings) {
+                    Label("Settings", systemImage: "gear")
                 }
             }
             .navigationTitle("ProStore")
@@ -59,10 +59,10 @@ struct MainSidebarView: View {
                         .navigationTitle("Store")
                         .navigationBarTitleDisplayMode(.large)
                 }
-            case .about:
+            case .settings:
                 NavigationStack {
-                    AboutView()
-                        .navigationTitle("About")
+                    SettingsView()
+                        .navigationTitle("Settings")
                         .navigationBarTitleDisplayMode(.large)
                 }
             case .updater:
@@ -82,7 +82,7 @@ enum SidebarItem: Hashable {
     case updater
     case certificates
     case store
-    case about
+    case settings
 
 }
 
