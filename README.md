@@ -66,6 +66,16 @@ The **best** alternative app store for iOS!
 
 ---
 
+## To-do list
+
+- [ ] Pairing file selection menu
+- [ ] Modify Sources for the Store
+- [ ] Add IPA Manager
+- [ ] Create settings view
+- [ ] Add second install mode: OTA Install
+
+---
+
 ## Credits
 - **SuperGamer474** — Developer  
 - **[Khcrysalis](https://github.com/khcrysalis/) & [Zhlynn](https://github.com/zhlynn/)** - Creator of the [Zsign Package](https://github.com/khcrysalis/Zsign-Package)
@@ -74,6 +84,7 @@ The **best** alternative app store for iOS!
 - **[AppleP12](https://check-p12.applep12.com/)** - Certificate Checker and Status
 
 ---
+
 
 
 
