@@ -68,7 +68,7 @@ class SourcesViewModel: ObservableObject {
         loadSources()
     }
     
-    private func loadSources() {
+    func loadSources() {
         do {
             if FileManager.default.fileExists(atPath: fileURL.path) {
                 let data = try Data(contentsOf: fileURL)
@@ -95,7 +95,7 @@ class SourcesViewModel: ObservableObject {
         }
     }
     
-    private func loadDefaultSources() {
+    func loadDefaultSources() {
         let defaultSources = [
             "https://repository.apptesters.org/",
             "https://wuxu1.github.io/wuxu-complete.json",
@@ -110,7 +110,7 @@ class SourcesViewModel: ObservableObject {
         saveSources()
     }
     
-    private func saveSources() {
+    func saveSources() {
         do {
             let data = try JSONEncoder().encode(sources)
             try data.write(to: fileURL)
