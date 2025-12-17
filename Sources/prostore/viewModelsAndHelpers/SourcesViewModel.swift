@@ -168,32 +168,53 @@ class SourcesViewModel: ObservableObject {
         editingSource = nil
         newSourceURL = ""
     }
+
+func validateSource(_ source: Source) {
+    validationStates[source.urlString] = .loading
     
-    func validateSource(_ source: Source) {
-        validationStates[source.urlString] = .loading
-        
-        guard let url = source.url else {
-            validationStates[source.urlString] = .invalid(NSError(domain: "Invalid URL", code: 0, userInfo: nil))
-            return
-        }
-        
-        var request = URLRequest(url: url)
-        request.setValue("AppTestersListView/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
-        request.timeoutInterval = 10
-        
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            DispatchQueue.main.async {
-                if let error = error {
-                    self?.validationStates[source.urlString] = .invalid(error)
-                } else if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
-                    let error = NSError(domain: "HTTP Error", code: httpResponse.statusCode, userInfo: nil)
-                    self?.validationStates[source.urlString] = .invalid(error)
-                } else {
-                    self?.validationStates[source.urlString] = .valid
-                }
-            }
-        }.resume()
+    guard let url = source.url else {
+        validationStates[source.urlString] = .invalid(NSError(domain: "Invalid URL", code: 0, userInfo: nil))
+        return
     }
+    
+    var request = URLRequest(url: url)
+    request.setValue("ProStore/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
+    request.timeoutInterval = 10
+    
+    URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+        DispatchQueue.main.async {
+            if let error = error {
+                self?.validationStates[source.urlString] = .invalid(error)
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                let error = NSError(domain: "HTTP Error", code: httpResponse.statusCode, userInfo: nil)
+                self?.validationStates[source.urlString] = .invalid(error)
+                return
+            }
+            
+            guard let data = data else {
+                let error = NSError(domain: "No Data", code: 0, userInfo: nil)
+                self?.validationStates[source.urlString] = .invalid(error)
+                return
+            }
+            
+            do {
+                if let jsonObject = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let appsArray = jsonObject["apps"] as? [Any] {
+                    // Valid JSON and contains an "apps" array
+                    self?.validationStates[source.urlString] = .valid
+                } else {
+                    let error = NSError(domain: "Invalid AltStore Source", code: 0, userInfo: [NSLocalizedDescriptionKey: "JSON does not contain an apps array"])
+                    self?.validationStates[source.urlString] = .invalid(error)
+                }
+            } catch {
+                self?.validationStates[source.urlString] = .invalid(error)
+            }
+        }
+    }.resume()
+}
     
     func validateAllSources() {
         for source in sources {

@@ -109,6 +109,12 @@ struct SourcesManagerView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Load Defaults") {
+                    sourcesViewModel.addDefaultSourcesIfNeeded()
+                }
+            }
+            
+            ToolbarItem(placement: .navigationBarTrailing) {
                 EditButton()
             }
 
@@ -117,12 +123,6 @@ struct SourcesManagerView: View {
                     sourcesViewModel.validateAllSources()
                 } label: {
                     Image(systemName: "arrow.clockwise")
-                }
-            }
-            
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button("Load Defaults") {
-                    sourcesViewModel.addDefaultSourcesIfNeeded()
                 }
             }
         }

@@ -265,7 +265,7 @@ final class RepoViewModel: ObservableObject {
         for url in sourceURLs {
             do {
                 var request = URLRequest(url: url)
-                request.setValue("AppTestersListView/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
+                request.setValue("ProStore/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
                 let (data, response) = try await URLSession.shared.data(for: request)
                 if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
                     throw NSError(domain: "RepoFetcher", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode)"])
