@@ -1,6 +1,7 @@
 // SettingsView.swift
 import SwiftUI
 
+// MARK: - Credit model
 struct Credit: Identifiable {
     var id = UUID()
     var name: String
@@ -9,11 +10,13 @@ struct Credit: Identifiable {
     var avatarURL: URL
 }
 
+// MARK: - SettingsView
 struct SettingsView: View {
     @EnvironmentObject var sourcesViewModel: SourcesViewModel
     @State private var showingSourcesManager = false
     @State private var showingSetup = false
-    
+
+    // MARK: Credits
     private let credits: [Credit] = [
         Credit(
             name: "SuperGamer474",
@@ -41,17 +44,23 @@ struct SettingsView: View {
         )
     ]
 
+    // MARK: App metadata
     private var appIconURL: URL? {
         URL(string: "https://raw.githubusercontent.com/ProStore-iOS/ProStore/main/Sources/prostore/Assets.xcassets/AppIcon.appiconset/Icon-1024.png")
     }
 
     private var versionString: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+        Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String ?? "1.0"
     }
 
+    // MARK: Body
     var body: some View {
         NavigationStack {
             List {
+
+                // MARK: Header
                 VStack(spacing: 8) {
                     if let url = appIconURL {
                         AsyncImage(url: url) { phase in
@@ -60,7 +69,12 @@ struct SettingsView: View {
                                     .resizable()
                                     .scaledToFit()
                                     .frame(width: 120, height: 120)
-                                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                                    .clipShape(
+                                        RoundedRectangle(
+                                            cornerRadius: 20,
+                                            style: .continuous
+                                        )
+                                    )
                                     .shadow(radius: 6)
                             } else if phase.error != nil {
                                 Image(systemName: "app.fill")
@@ -87,6 +101,7 @@ struct SettingsView: View {
                 .padding(.vertical, 20)
                 .listRowInsets(EdgeInsets())
 
+                // MARK: Setup
                 Section {
                     Button("Show Setup") {
                         showingSetup = true
@@ -94,13 +109,14 @@ struct SettingsView: View {
                     .buttonStyle(.borderedProminent)
                 }
 
+                // MARK: Sources
                 Section(header: Text("Sources")) {
                     NavigationLink {
                         SourcesManagerView()
                     } label: {
                         Label("Sources Manager", systemImage: "link")
                     }
-                    
+
                     DisclosureGroup("Current Sources") {
                         ForEach(sourcesViewModel.sources.prefix(3)) { source in
                             HStack {
@@ -108,16 +124,19 @@ struct SettingsView: View {
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                     .lineLimit(1)
+
                                 Spacer()
-                                if let url = source.url,
-                                   let validationState = sourcesViewModel.validationStates[url] {
+
+                                // ✅ UPDATED: String-keyed validation lookup
+                                if let validationState =
+                                    sourcesViewModel.validationStates[source.urlString] {
                                     Image(systemName: validationState.icon)
                                         .font(.caption2)
                                         .foregroundColor(validationState.color)
                                 }
                             }
                         }
-                        
+
                         if sourcesViewModel.sources.count > 3 {
                             Text("+ \(sourcesViewModel.sources.count - 3) more")
                                 .font(.caption)
@@ -126,13 +145,14 @@ struct SettingsView: View {
                     }
                 }
 
+                // MARK: Credits
                 Section(header: Text("Credits")) {
-                    ForEach(credits) { c in
-                        CreditRow(credit: c)
+                    ForEach(credits) { credit in
+                        CreditRow(credit: credit)
                     }
                 }
             }
-            .listStyle(InsetGroupedListStyle())
+            .listStyle(.insetGrouped)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
             .onAppear {
@@ -140,14 +160,17 @@ struct SettingsView: View {
             }
         }
         .sheet(isPresented: $showingSetup) {
-            SetupView(onComplete: { showingSetup = false })
+            SetupView {
+                showingSetup = false
+            }
         }
     }
 }
 
+// MARK: - CreditRow
 struct CreditRow: View {
     let credit: Credit
-    @Environment(\.openURL) var openURL
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         HStack(spacing: 12) {
@@ -166,7 +189,10 @@ struct CreditRow: View {
             }
             .frame(width: 44, height: 44)
             .clipShape(Circle())
-            .overlay(Circle().stroke(Color(UIColor.separator), lineWidth: 0.5))
+            .overlay(
+                Circle()
+                    .stroke(Color(UIColor.separator), lineWidth: 0.5)
+            )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(credit.name)
@@ -185,7 +211,7 @@ struct CreditRow: View {
                     .imageScale(.large)
                     .foregroundColor(.primary)
             }
-            .buttonStyle(BorderlessButtonStyle())
+            .buttonStyle(.borderless)
         }
         .padding(.vertical, 8)
     }

@@ -3,7 +3,7 @@ import Combine
 
 class SourcesViewModel: ObservableObject {
     @Published var sources: [Source] = []
-    @Published var validationStates: [URL: ValidationState] = [:]
+    @Published var validationStates: [String: ValidationState] = [:] // Use String keys
     @Published var isAddingNew = false
     @Published var newSourceURL = ""
     @Published var editingSource: Source? = nil
@@ -178,34 +178,32 @@ class SourcesViewModel: ObservableObject {
         newSourceURL = ""
     }
     
-func validateSource(_ source: Source) {
-    guard let url = source.url else {
-        // Create a placeholder URL for invalid URL strings to store validation state
-        if let placeholderURL = URL(string: "invalid://" + source.urlString.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!) {
-            validationStates[placeholderURL] = .invalid(NSError(domain: "Invalid URL", code: 0, userInfo: nil))
+    func validateSource(_ source: Source) {
+        // Always set to loading first
+        validationStates[source.urlString] = .loading
+        
+        guard let url = source.url else {
+            validationStates[source.urlString] = .invalid(NSError(domain: "Invalid URL", code: 0, userInfo: nil))
+            return
         }
-        return
-    }
-    
-    validationStates[url] = .loading
-    
-    var request = URLRequest(url: url)
-    request.setValue("AppTestersListView/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
-    request.timeoutInterval = 10
-    
-    URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-        DispatchQueue.main.async {
-            if let error = error {
-                self?.validationStates[url] = .invalid(error)
-            } else if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
-                let error = NSError(domain: "HTTP Error", code: httpResponse.statusCode, userInfo: nil)
-                self?.validationStates[url] = .invalid(error)
-            } else {
-                self?.validationStates[url] = .valid
+        
+        var request = URLRequest(url: url)
+        request.setValue("AppTestersListView/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = 10
+        
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    self?.validationStates[source.urlString] = .invalid(error)
+                } else if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                    let error = NSError(domain: "HTTP Error", code: httpResponse.statusCode, userInfo: nil)
+                    self?.validationStates[source.urlString] = .invalid(error)
+                } else {
+                    self?.validationStates[source.urlString] = .valid
+                }
             }
-        }
-    }.resume()
-}
+        }.resume()
+    }
     
     func validateAllSources() {
         for source in sources {

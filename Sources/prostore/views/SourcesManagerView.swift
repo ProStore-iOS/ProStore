@@ -143,18 +143,6 @@ struct SourceRow: View {
     let source: SourcesViewModel.Source
     @EnvironmentObject var sourcesViewModel: SourcesViewModel
     
-    var validationState: SourcesViewModel.ValidationState? {
-        // Try to get validation state from the actual URL
-        if let url = source.url {
-            return sourcesViewModel.validationStates[url]
-        }
-        // If URL is invalid, look for placeholder validation state
-        if let placeholderURL = URL(string: "invalid://" + source.urlString.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!) {
-            return sourcesViewModel.validationStates[placeholderURL]
-        }
-        return nil
-    }
-    
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
@@ -164,7 +152,7 @@ struct SourceRow: View {
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
                 
-                if let validationState = validationState {
+                if let validationState = sourcesViewModel.validationStates[source.urlString] {
                     HStack {
                         Image(systemName: validationState.icon)
                             .font(.caption)
