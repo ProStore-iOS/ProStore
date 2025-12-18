@@ -19,10 +19,10 @@ struct SettingsView: View {
     // MARK: Credits
     private let credits: [Credit] = [
         Credit(
-            name: "SuperGamer474",
+            name: "NovaDev404",
             role: "Developer",
-            profileURL: URL(string: "https://github.com/SuperGamer474")!,
-            avatarURL: URL(string: "https://github.com/SuperGamer474.png")!
+            profileURL: URL(string: "https://github.com/NovaDev404")!,
+            avatarURL: URL(string: "https://github.com/NovaDev404.png")!
         ),
         Credit(
             name: "Zhlynn",
@@ -195,4 +195,5 @@ struct CreditRow: View {
         }
         .padding(.vertical, 8)
     }
+
 }
