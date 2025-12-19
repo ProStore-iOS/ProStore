@@ -97,20 +97,19 @@ jobs:
           set -e
           ARCHIVE_PATH="$PWD/build/prostore.xcarchive"
           mkdir -p build
-          
-          # Try to read cached objectVersion from file
+
+          # Cache file
           CACHE_FILE=".object_version_cache"
           CACHED_VERSION=""
-          candidates=(77)
-          
+          candidates=(77)  # Add other candidate versions if needed
+
+          # Try cached version first
           if [ -f "$CACHE_FILE" ]; then
             CACHED_VERSION=$(cat "$CACHE_FILE" | tr -d '\n')
             echo "Found cached objectVersion: $CACHED_VERSION"
-            
-            # Test the cached version first
             echo "----- Testing cached objectVersion = $CACHED_VERSION -----"
             /usr/bin/perl -0777 -pe "s/objectVersion = \\d+;/objectVersion = $CACHED_VERSION;/" -i.bak prostore.xcodeproj/project.pbxproj || true
-            
+
             set +e
             xcodebuild clean archive \
               -project prostore.xcodeproj \
@@ -121,25 +120,24 @@ jobs:
               CODE_SIGN_IDENTITY="" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
             rc=$?
             set -e
-            
+
             if [ $rc -eq 0 ]; then
               echo "✅ Cached objectVersion $CACHED_VERSION works!"
               echo "object_version=$CACHED_VERSION" >> $GITHUB_OUTPUT
-              echo "$CACHED_VERSION" > "$CACHE_FILE"
               exit 0
             else
-              echo "❌ Cached objectVersion $CACHED_VERSION failed, trying other candidates..."
+              echo "❌ Cached objectVersion $CACHED_VERSION failed, trying candidates..."
             fi
           fi
-          
-          # If no cache or cached version failed, try all candidates
+
+          # Try all candidates
           build_ok=0
           for v in "${candidates[@]}"; do
             echo "----- Attempting build with objectVersion = $v -----"
             /usr/bin/perl -0777 -pe "s/objectVersion = \\d+;/objectVersion = $v;/" -i.bak prostore.xcodeproj/project.pbxproj || true
-            echo "Applied objectVersion $v. Header preview:"
+            echo "Header preview:"
             sed -n '1,20p' prostore.xcodeproj/project.pbxproj || true
-            echo "Running xcodebuild archive..."
+
             set +e
             xcodebuild clean archive \
               -project prostore.xcodeproj \
@@ -154,16 +152,15 @@ jobs:
               echo "✅ xcodebuild succeeded with objectVersion = $v"
               echo "object_version=$v" >> $GITHUB_OUTPUT
               echo "$v" > "$CACHE_FILE"
-              echo "Cached successful objectVersion: $v"
               build_ok=1
               break
             else
               echo "❌ xcodebuild failed (exit $rc). Trying next objectVersion..."
             fi
           done
-          
+
           if [ "$build_ok" -ne 1 ]; then
-            echo "ERROR: All objectVersion attempts failed. Dumping debug info:"
+            echo "ERROR: All objectVersion attempts failed."
             echo "===== project.pbxproj header ====="
             sed -n '1,200p' prostore.xcodeproj/project.pbxproj || true
             echo "===== build directory listing ====="

@@ -95,7 +95,7 @@ public struct AppVersion: Decodable {
     let localizedDescription: String?
 }
 // Final AltApp used by the UI (includes repositoryName)
-public struct AltApp: Identifiable, Equatable {
+public struct AltApp: Identifiable, Equatable, Sendable {
     public var id: String { bundleIdentifier }
     public let name: String
     public let bundleIdentifier: String

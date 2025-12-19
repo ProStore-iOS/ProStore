@@ -334,12 +334,12 @@ class DownloadSignManager: ObservableObject {
             } catch {
                 await MainActor.run {
                     let errorMessage: String
-                    if let nsError = error as NSError {
+                    if let nsError = error as? NSError {
                         errorMessage = nsError.localizedDescription
                     } else {
                         errorMessage = "❌ Install failed: \(error.localizedDescription)"
                     }
-                    
+
                     self.showError(message: errorMessage)
                     self.installationStream = nil
                     self.installationTask = nil
