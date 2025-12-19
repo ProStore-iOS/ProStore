@@ -14,23 +14,18 @@ struct SetupView: View {
             imageName: "star.fill"
         ),
         SetupPage(
-            title: "Install StikDebug",
-            subtitle: "Install StikDebug from the App Store [here](https://apps.apple.com/us/app/stikdebug/id6744045754).",
-            imageName: "bolt.fill"
-        ),
-        SetupPage(
-            title: "Add pairing file to StikDebug",
-            subtitle: "Follow the steps [here](https://stikdebug.xyz/#guide) on your computer to place the pairing file in StikDebug.",
+            title: "Install LocalDevVPN",
+            subtitle: "Install LocalDevVPN from the App Store [here](https://apps.apple.com/us/app/localdevvpn/id6755608044).",
             imageName: "bolt.fill"
         ),
         SetupPage(
             title: "Add pairing file to ProStore",
-            subtitle: "Go to 'Files', and navigate to the 'StikDebug' folder in 'On My iPad',\nthen duplicate/copy the file to the 'ProStore' folder in 'On My iPad'.\nMake sure its called 'pairingFile.plist'.",
-            imageName: "p.square"
+            subtitle: "Follow the steps [here](https://prostore-ios.github.io/docs/setup/#install-localdevvpn) on your computer to install iLoader and place the pairing file in ProStore.",
+            imageName: "bolt.fill"
         ),
         SetupPage(
             title: "Reminder",
-            subtitle: "Important: Make sure before every time you use ProStore, turn on the StikDebug VPN by either opening StikDebug or via Settings, otherwise app installs won't work!",
+            subtitle: "Important: Either install the [Turn On VPN Shortcut](https://www.icloud.com/shortcuts/4ff18eec29304b6090a4a3f8d6a821b8), or make sure before every time you use ProStore, turn on the LocalDevVPN VPN by either opening LocalDevVPN or via Settings, otherwise app installs won't work!",
             imageName: "list.bullet.circle"
         ),
         SetupPage(
@@ -108,4 +103,5 @@ struct SetupPage {
     let subtitle: String
     let imageName: String
 }
+
 
