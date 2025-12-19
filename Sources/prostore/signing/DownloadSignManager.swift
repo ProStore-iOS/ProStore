@@ -21,10 +21,10 @@ class DownloadSignManager: ObservableObject {
     private var sessionTempDir: URL?
     private let sessionID = UUID().uuidString
 
-    // Portion split (tweak if you want different ratios)
+    // Portion split
     private let downloadPortion: Double = 0.33
     private let signPortion: Double = 0.33
-    private let installPortion: Double = 1.0 - (0.33 + 0.33) // ~0.34
+    private let installPortion: Double = 1.0 - (0.33 + 0.33)
 
     func downloadAndSign(app: AltApp) {
         // Reset error state
@@ -33,13 +33,13 @@ class DownloadSignManager: ObservableObject {
 
         // Validate certificate selection
         guard let selectedCertFolder = UserDefaults.standard.string(forKey: "selectedCertificateFolder") else {
-            self.showError(message: "No certificate selected. Please select a certificate first.")
+            self.showError(message: "❌ No certificate selected. Please select a certificate first.")
             return
         }
 
         // Validate certificate files exist
         guard let certFiles = getCertificateFiles(for: selectedCertFolder) else {
-            self.showError(message: "Certificate files not found or incomplete. Please add a certificate.")
+            self.showError(message: "❌ Certificate files not found or incomplete. Please add a certificate.")
             return
         }
 
@@ -47,12 +47,12 @@ class DownloadSignManager: ObservableObject {
         let fm = FileManager.default
         let pairingFile = getAppFolder().appendingPathComponent("pairingFile.plist")
         if !fm.fileExists(atPath: pairingFile.path) {
-            self.showError(message: "Pairing file not found. Please follow setup to place pairing file in the 'ProStore' folder.")
+            self.showError(message: "❌ Pairing file not found. Please follow setup to place pairing file in the 'ProStore' folder.")
             return
         }
 
         guard let downloadURL = app.downloadURL else {
-            self.showError(message: "No download URL available for this app")
+            self.showError(message: "❌ No download URL available for this app")
             return
         }
 
@@ -88,38 +88,72 @@ class DownloadSignManager: ObservableObject {
             try fm.createDirectory(at: sessionTempDir, withIntermediateDirectories: true)
             self.sessionTempDir = sessionTempDir
         } catch {
-            print("Failed to create session temp directory: \(error)")
+            self.showError(message: "❌ Failed to create temporary directory: \(error.localizedDescription)")
         }
     }
 
     private func performDownloadAndSign(downloadURL: URL, appName: String, p12URL: URL, provURL: URL, password: String) {
         guard let sessionTempDir = sessionTempDir else {
             DispatchQueue.main.async {
-                self.showError(message: "Failed to create temporary directory")
+                self.showError(message: "❌ Failed to create temporary directory")
             }
             return
         }
 
         let tempIPAURL = sessionTempDir.appendingPathComponent("download.ipa")
 
-        // Step 1: Download the IPA (with progress)
+        // Step 1: Download the IPA
         self.downloadIPA(from: downloadURL, to: tempIPAURL) { [weak self] result in
             guard let self = self else { return }
 
-            // ensure observer cleared
             self.downloadProgressObservation = nil
 
             switch result {
             case .success:
+                // Verify downloaded IPA
+                if !self.verifyIPA(at: tempIPAURL) {
+                    DispatchQueue.main.async {
+                        self.showError(message: "❌ Downloaded IPA file is invalid or corrupted")
+                    }
+                    return
+                }
+                
                 // Step 2: Sign the IPA
                 self.signIPA(ipaURL: tempIPAURL, p12URL: p12URL, provURL: provURL, 
                            password: password, appName: appName, sessionTempDir: sessionTempDir)
 
             case .failure(let error):
                 DispatchQueue.main.async {
-                    self.showError(message: "Download failed: \(error.localizedDescription)")
+                    self.showError(message: "❌ Download failed: \(error.localizedDescription)")
                 }
             }
+        }
+    }
+
+    // Verify IPA file is valid
+    private func verifyIPA(at url: URL) -> Bool {
+        let fm = FileManager.default
+        
+        // Check file exists
+        guard fm.fileExists(atPath: url.path) else { return false }
+        
+        // Check file size
+        do {
+            let attributes = try fm.attributesOfItem(atPath: url.path)
+            let fileSize = attributes[.size] as? Int64 ?? 0
+            guard fileSize > 1024 else { return false } // At least 1KB
+            
+            // Check if it's a zip file (IPA is a zip)
+            let fileHandle = try FileHandle(forReadingFrom: url)
+            defer { try? fileHandle.close() }
+            
+            let magicNumber = try fileHandle.read(upToCount: 4)
+            let zipMagic: [UInt8] = [0x50, 0x4B, 0x03, 0x04] // PK..
+            guard let data = magicNumber, data.count == 4 else { return false }
+            
+            return data.elementsEqual(zipMagic)
+        } catch {
+            return false
         }
     }
 
@@ -138,7 +172,7 @@ class DownloadSignManager: ObservableObject {
 
             if let error = error as NSError?, error.domain == NSURLErrorDomain, error.code == NSURLErrorCancelled {
                 DispatchQueue.main.async {
-                    self.showError(message: "Download cancelled")
+                    self.showError(message: "❌ Download cancelled")
                 }
                 completion(.failure(error))
                 return
@@ -157,7 +191,6 @@ class DownloadSignManager: ObservableObject {
             }
 
             do {
-                // If destination exists, remove it
                 let fm = FileManager.default
                 if fm.fileExists(atPath: destinationURL.path) {
                     try fm.removeItem(at: destinationURL)
@@ -165,7 +198,6 @@ class DownloadSignManager: ObservableObject {
                 try fm.moveItem(at: tempLocalURL, to: destinationURL)
 
                 DispatchQueue.main.async {
-                    // make sure progress reflects completed download within its portion
                     self.progress = self.downloadPortion
                     self.status = "📥 Downloaded (100%)"
                 }
@@ -176,15 +208,12 @@ class DownloadSignManager: ObservableObject {
             }
         }
 
-        // keep reference for cancel()
         self.downloadTask = task
 
-        // Observe the Progress
         self.downloadProgressObservation = task.progress.observe(\.fractionCompleted, options: [.initial, .new]) { [weak self] progressObj, _ in
             guard let self = self else { return }
             DispatchQueue.main.async {
-                let fraction = progressObj.fractionCompleted // 0.0 .. 1.0
-                // Map download fraction to [0 .. downloadPortion]
+                let fraction = progressObj.fractionCompleted
                 let overall = fraction * self.downloadPortion
                 self.progress = overall
 
@@ -241,9 +270,13 @@ class DownloadSignManager: ObservableObject {
                     guard let self = self else { return }
                     switch result {
                     case .success(let signedIPAURL):
-                        // After signing, set progress to end of signing portion
+                        // Verify signed IPA exists
+                        if !self.verifyIPA(at: signedIPAURL) {
+                            self.showError(message: "❌ Signed IPA file is invalid or corrupted")
+                            return
+                        }
+                        
                         self.progress = self.downloadPortion + self.signPortion
-                        // Start installation and track progress
                         self.startInstallation(signedIPAURL: signedIPAURL)
 
                     case .failure(let error):
@@ -257,6 +290,16 @@ class DownloadSignManager: ObservableObject {
     private func startInstallation(signedIPAURL: URL) {
         self.installationTask = Task {
             do {
+                // Verify the signed IPA exists before installation
+                let fm = FileManager.default
+                guard fm.fileExists(atPath: signedIPAURL.path) else {
+                    throw NSError(
+                        domain: "DownloadSignManager",
+                        code: -1,
+                        userInfo: [NSLocalizedDescriptionKey: "Signed IPA file not found"]
+                    )
+                }
+                
                 // Get the installation progress stream
                 let stream = try await installApp(from: signedIPAURL)
                 self.installationStream = stream
@@ -264,7 +307,6 @@ class DownloadSignManager: ObservableObject {
                 // Process installation progress updates
                 for try await (installProgress, installStatus) in stream {
                     await MainActor.run {
-                        // Installation maps to final portion:
                         let overallProgress = self.downloadPortion + self.signPortion + (installProgress * self.installPortion)
                         self.progress = overallProgress
                         self.status = "\(installStatus)"
@@ -291,7 +333,14 @@ class DownloadSignManager: ObservableObject {
 
             } catch {
                 await MainActor.run {
-                    self.showError(message: "❌ Install failed: \(error.localizedDescription)")
+                    let errorMessage: String
+                    if let nsError = error as NSError {
+                        errorMessage = nsError.localizedDescription
+                    } else {
+                        errorMessage = "❌ Install failed: \(error.localizedDescription)"
+                    }
+                    
+                    self.showError(message: errorMessage)
                     self.installationStream = nil
                     self.installationTask = nil
                     self.cleanupSessionTempDirectory()
@@ -302,13 +351,13 @@ class DownloadSignManager: ObservableObject {
 
     private func showError(message: String) {
         DispatchQueue.main.async {
-            self.progress = 1.0 // Set to 100%
+            self.progress = 1.0
             self.status = message
             self.errorMessage = message
             self.showError = true
-            self.isProcessing = true // Keep progress bar visible
+            self.isProcessing = true
 
-            // Hide progress bar after 5 seconds with red state
+            // Hide progress bar after 5 seconds
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
                 self.isProcessing = false
                 self.showError = false
@@ -316,10 +365,7 @@ class DownloadSignManager: ObservableObject {
                 self.status = ""
                 self.errorMessage = ""
 
-                // Clean up any tasks
                 self.cancelTasks()
-
-                // Clean temp folder too
                 self.cleanupSessionTempDirectory()
             }
         }
@@ -356,9 +402,7 @@ class DownloadSignManager: ObservableObject {
         return appFolder
     }
 
-    // -----------------------------
     // Session temp directory cleanup
-    // -----------------------------
     private func cleanupSessionTempDirectory() {
         guard let sessionTempDir = sessionTempDir else { return }
         
@@ -367,9 +411,8 @@ class DownloadSignManager: ObservableObject {
             if fm.fileExists(atPath: sessionTempDir.path) {
                 do {
                     try fm.removeItem(at: sessionTempDir)
-                    print("Cleaned up session temp directory: \(sessionTempDir.path)")
                 } catch {
-                    print("Failed to clean up session temp directory: \(error)")
+                    // Silent cleanup failure
                 }
             }
         }
