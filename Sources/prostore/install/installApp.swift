@@ -6,141 +6,129 @@ import Combine
 // MARK: - Error Transformer
 private func transformInstallError(_ error: Error) -> Error {
     let nsError = error as NSError
-    
-    // First, extract any meaningful message from the error string
     let errorString = String(describing: error)
     
-    // Check for specific IDeviceSwift error patterns
-    if let ideviceMessage = extractIDeviceErrorMessage(from: errorString) {
+    // Extract real error message from various formats
+    var userMessage = extractUserReadableErrorMessage(from: error)
+    
+    // If we got a good message, use it
+    if let userMessage = userMessage, !userMessage.isEmpty {
         return NSError(
             domain: nsError.domain,
             code: nsError.code,
-            userInfo: [
-                NSLocalizedDescriptionKey: "Failed to install app: \(ideviceMessage)"
-            ]
+            userInfo: [NSLocalizedDescriptionKey: userMessage]
         )
     }
     
-    // Check for VPN/connection errors
+    // Fallback: Generic error 1 handling
     if errorString.contains("error 1.") {
-        if errorString.lowercased().contains("vpn") || 
-           errorString.lowercased().contains("connection") ||
-           errorString.lowercased().contains("pairing") ||
-           errorString.lowercased().contains("afc") {
-            
+        // Check for specific patterns in the error string
+        if errorString.contains("Missing Pairing") {
             return NSError(
                 domain: nsError.domain,
                 code: nsError.code,
-                userInfo: [
-                    NSLocalizedDescriptionKey: "Failed to install app! Make sure the LocalDevVPN VPN is turned on and device is connected."
-                ]
+                userInfo: [NSLocalizedDescriptionKey: "Missing pairing file. Please ensure pairing file exists in ProStore folder."]
             )
         }
-    }
-    
-    // Generic pattern extraction for "The operation couldn't be completed. (IDeviceSwiftError error 1.)"
-    let pattern = #"The operation .*? be completed\. \((.+? error .+?)\)"#
-    let nsDesc = errorString as NSString
-    
-    if let regex = try? NSRegularExpression(pattern: pattern),
-       let match = regex.firstMatch(in: errorString, range: NSRange(location: 0, length: nsDesc.length)),
-       match.numberOfRanges > 1 {
         
-        let inner = nsDesc.substring(with: match.range(at: 1))
+        if errorString.contains("Cannot connect to AFC") || errorString.contains("afc_client_connect") {
+            return NSError(
+                domain: nsError.domain,
+                code: nsError.code,
+                userInfo: [NSLocalizedDescriptionKey: "Cannot connect to AFC. Check USB connection, VPN, and accept trust dialog on device."]
+            )
+        }
+        
+        if errorString.contains("installation_proxy") {
+            return NSError(
+                domain: nsError.domain,
+                code: nsError.code,
+                userInfo: [NSLocalizedDescriptionKey: "Installation service failed. The app may already be installed or device storage full."]
+            )
+        }
+        
+        // Generic error 1 message
         return NSError(
             domain: nsError.domain,
             code: nsError.code,
-            userInfo: [
-                NSLocalizedDescriptionKey: "Failed to install app! (\(inner))"
-            ]
+            userInfo: [NSLocalizedDescriptionKey: "Installation failed. Make sure: 1) VPN is on, 2) Device is connected via USB, 3) Trust dialog is accepted, 4) Pairing file is in ProStore folder."]
         )
     }
     
-    // Return original error with cleaned up message
+    // Try to clean up the generic message
     let originalMessage = nsError.localizedDescription
-    let cleanedMessage = cleanErrorMessage(originalMessage)
+    let cleanedMessage = cleanGenericErrorMessage(originalMessage)
     
     return NSError(
         domain: nsError.domain,
         code: nsError.code,
-        userInfo: [
-            NSLocalizedDescriptionKey: cleanedMessage
-        ]
+        userInfo: [NSLocalizedDescriptionKey: cleanedMessage]
     )
 }
 
-// Helper to extract IDeviceSwift specific error messages
-private func extractIDeviceErrorMessage(from errorString: String) -> String? {
-    let lowercasedError = errorString.lowercased()
+// Extract user-readable message from error
+private func extractUserReadableErrorMessage(from error: Error) -> String? {
+    // Try to get error description from LocalizedError
+    if let localizedError = error as? LocalizedError {
+        return localizedError.errorDescription
+    }
     
-    // Common IDeviceSwift error messages
-    let errorPatterns = [
-        "missing pairing": "Missing pairing file. Please ensure pairing file exists in ProStore folder.",
-        "cannot connect to afc": "Cannot connect to AFC service. Check USB connection and trust dialog.",
-        "missing file handle": "File handle error during transfer.",
-        "error writing to afc": "Failed to write app to device. Check storage space.",
-        "installation_proxy_connect_tcp": "Failed to connect to installation service.",
-        "afc_make_directory": "Failed to create staging directory on device.",
-        "afc_file_open": "Failed to open file on device.",
-        "afc_file_write": "Failed to write file data to device.",
-        "afc_file_close": "Failed to close file on device."
+    let errorString = String(describing: error)
+    
+    // Look for specific error patterns in the string representation
+    let patterns = [
+        "Missing Pairing": "Missing pairing file. Please check ProStore folder.",
+        "Cannot connect to AFC": "Cannot connect to device. Check USB and VPN.",
+        "AFC Error:": "Device communication failed.",
+        "Installation Error:": "App installation failed.",
+        "File Error:": "File operation failed.",
+        "Connection Failed:": "Connection to device failed."
     ]
     
-    for (pattern, message) in errorPatterns {
-        if lowercasedError.contains(pattern.lowercased()) {
+    for (pattern, message) in patterns {
+        if errorString.contains(pattern) {
             return message
         }
     }
     
-    // Try to extract message from IDeviceSwiftError structure
-    if let range = errorString.range(of: "_message = \"") {
-        let start = errorString.index(range.upperBound, offsetBy: 0)
-        if let endRange = errorString[start...].range(of: "\"") {
-            let message = String(errorString[start..<endRange.lowerBound])
-            if !message.isEmpty {
-                return message
-            }
-        }
-    }
-    
-    // Extract from userInfo if available
-    if let userInfoRange = errorString.range(of: "userInfo = ") {
-        let userInfoString = String(errorString[userInfoRange.upperBound...])
-        if let nsLocalizedRange = userInfoString.range(of: "NSLocalizedDescription = ") {
-            let messageStart = userInfoString.index(nsLocalizedRange.upperBound, offsetBy: 0)
-            if let messageEnd = userInfoString[messageStart...].firstIndex(of: ";") {
-                let message = String(userInfoString[messageStart..<messageEnd])
-                if !message.isEmpty && message != "(null)" {
-                    return message
-                }
-            }
-        }
+    // Try to extract from NSError userInfo
+    let nsError = error as NSError
+    if let userInfoMessage = nsError.userInfo[NSLocalizedDescriptionKey] as? String,
+       !userInfoMessage.isEmpty,
+       userInfoMessage != nsError.localizedDescription {
+        return userInfoMessage
     }
     
     return nil
 }
 
 // Clean up generic error messages
-private func cleanErrorMessage(_ message: String) -> String {
+private func cleanGenericErrorMessage(_ message: String) -> String {
     var cleaned = message
     
-    // Remove redundant prefixes
-    let prefixes = [
+    // Remove the generic prefix
+    let genericPrefixes = [
         "The operation couldn't be completed. ",
         "The operation could not be completed. ",
-        "IDeviceSwift.IDeviceSwiftError error ",
-        "IDeviceSwiftError error "
+        "IDeviceSwift.IDeviceSwiftError ",
+        "IDeviceSwiftError "
     ]
     
-    for prefix in prefixes {
+    for prefix in genericPrefixes {
         if cleaned.hasPrefix(prefix) {
             cleaned = String(cleaned.dropFirst(prefix.count))
+            break
         }
     }
     
-    // Clean parentheses
+    // Remove trailing period if present
     if cleaned.hasSuffix(".") {
         cleaned = String(cleaned.dropLast())
+    }
+    
+    // If it's just "error 1.", provide more helpful message
+    if cleaned == "error 1" || cleaned == "error 1." {
+        return "Device installation failed. Please check: 1) VPN connection, 2) USB cable, 3) Trust dialog, 4) Pairing file."
     }
     
     return cleaned.isEmpty ? "Unknown installation error" : cleaned
@@ -151,13 +139,13 @@ private func cleanErrorMessage(_ message: String) -> String {
 public func installApp(from ipaURL: URL) async throws
 -> AsyncThrowingStream<(progress: Double, status: String), Error> {
 
-    // Pre-flight check: verify IPA exists and is valid
+    // Pre-flight check: verify IPA exists
     let fileManager = FileManager.default
     guard fileManager.fileExists(atPath: ipaURL.path) else {
         throw NSError(
             domain: "InstallApp",
             code: -1,
-            userInfo: [NSLocalizedDescriptionKey: "IPA file not found at: \(ipaURL.path)"]
+            userInfo: [NSLocalizedDescriptionKey: "IPA file not found: \(ipaURL.lastPathComponent)"]
         )
     }
     
@@ -165,7 +153,7 @@ public func installApp(from ipaURL: URL) async throws
     do {
         let attributes = try fileManager.attributesOfItem(atPath: ipaURL.path)
         let fileSize = attributes[.size] as? Int64 ?? 0
-        guard fileSize > 1024 else { // At least 1KB
+        guard fileSize > 1024 else {
             throw NSError(
                 domain: "InstallApp",
                 code: -1,
@@ -176,7 +164,7 @@ public func installApp(from ipaURL: URL) async throws
         throw NSError(
             domain: "InstallApp",
             code: -1,
-            userInfo: [NSLocalizedDescriptionKey: "Failed to read IPA file: \(error.localizedDescription)"]
+            userInfo: [NSLocalizedDescriptionKey: "Cannot read IPA file"]
         )
     }
 
