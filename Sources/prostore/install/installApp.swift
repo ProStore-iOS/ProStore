@@ -8,14 +8,15 @@ private func transformInstallError(_ error: Error) -> Error {
     let nsError = error as NSError
     let description = nsError.localizedDescription
 
-    // Exact StikDebug VPN error
-    if description == "The operation couldn't be completed. (IDeviceSwift.IDeviceSwiftError error 1.)" {
+    // Exact LocalDevVPN VPN error
+    if description.contains("IDeviceSwiftError")
+     && description.contains("error 1.") {
         return NSError(
             domain: nsError.domain,
             code: nsError.code,
             userInfo: [
                 NSLocalizedDescriptionKey:
-                "iDevice failed to install the app! Make sure the StikDebug VPN is turned on!"
+                "iDevice failed to install the app! Make sure the LocalDevVPN VPN is turned on!"
             ]
         )
     }
@@ -120,3 +121,4 @@ public func installApp(from ipaURL: URL) async throws
         }
     }
 }
+
