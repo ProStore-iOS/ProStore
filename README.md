@@ -9,12 +9,13 @@ The **best** alternative app store for iOS!
 
 ## Install ProStore
 
-<a href="https://prostore-ios.github.io/docs/">**GUIDED INSTALL**</a> (Strongly Recommended)<br>or<br>
-<a href="https://prostore-ios.github.io/">DIRECT INSTALL</a><br>or<br>
-<a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=altstore">Add to AltStore</a>  
-<a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=sidestore">Add to SideStore</a>  
+<a href="https://prostore-ios.github.io/docs/">**INSTALL GUIDE / DOCUMENTATION**</a>  
+or  
+<a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=feather">Add to Feather</a>  
 <a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=esign">Add to ESign</a>  
-<a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=scarlet">Add to Scarlet</a>
+<a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=scarlet">Add to Scarlet</a>  
+or  
+<a href="https://github.com/ProStore-iOS/ProStore/releases/latest">Download IPA</a>
 
 ---
 
@@ -34,6 +35,7 @@ The **best** alternative app store for iOS!
 | **Unlimited Apps**      | ✅       | ❌        | ❌       | ✅    |
 | **Custom IPA**      | ⏰       | ✅        | ✅       | ✅    |
 | **App Store**      | ✅       | 🟡        | 🟡       | 🟡    |
+| **AltStore App Sources**      | ✅       | ✅        | ✅       | ✅    |
 | **Certificate Management**      | ✅       | ❌        | ❌       | 🟡    |
 | **Official Certificates**      | ✅       | ❌        | ❌       | ❌    |
 | **Install via Apple ID**      | ❌       | ✅        | ✅       | ❌    |  
@@ -84,3 +86,4 @@ The **best** alternative app store for iOS!
 - **[AppleP12](https://check-p12.applep12.com/)** - Certificate Checker and Status
 
 ---
+
