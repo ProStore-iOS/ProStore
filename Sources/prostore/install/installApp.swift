@@ -21,13 +21,16 @@ private func transformInstallError(_ error: Error) -> Error {
         )
     }
 
-    // Generic: The operation couldn't be completed. (<blah1> error <blah2>.)
-    let regex = #"^The operation couldn't be completed\. \((.+ error .+)\.\)$"#
+    // Generic: The operation <anything> be completed. (<foo> error <bar>.)
+    // Use non-greedy capture and NSRegularExpression for robust extraction
+    let pattern = #"The operation .*? be completed\. \((.+? error .+?)\.\)"#
 
-    if let matchRange = description.range(of: regex, options: .regularExpression) {
-        let inner = description[matchRange]
-            .replacingOccurrences(of: "The operation couldn't be completed. (", with: "")
-            .replacingOccurrences(of: ".)", with: "")
+    let nsDesc = description as NSString
+    if let regex = try? NSRegularExpression(pattern: pattern),
+       let match = regex.firstMatch(in: description, range: NSRange(location: 0, length: nsDesc.length)),
+       match.numberOfRanges > 1 {
+
+        let inner = nsDesc.substring(with: match.range(at: 1))
 
         return NSError(
             domain: nsError.domain,
@@ -121,4 +124,3 @@ public func installApp(from ipaURL: URL) async throws
         }
     }
 }
-
