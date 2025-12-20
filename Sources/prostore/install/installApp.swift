@@ -114,7 +114,7 @@ public func installApp(from ipaURL: URL) async throws -> AsyncThrowingStream<(pr
 
         installTask = Task {
             HeartbeatManager.shared.start()
-            let isIdevice = UserDefaults.standard.integer(forKey: "Feather.installationMethod") == 1
+            let isIdevice = UserDefaults.standard.integer(forKey: "ProStore.installationMethod") == 1
             let viewModel = InstallerStatusViewModel(isIdevice: isIdevice)
 
             // Status updates
