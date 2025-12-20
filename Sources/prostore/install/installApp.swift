@@ -119,52 +119,57 @@ public func installApp(from ipaURL: URL) async throws
 
     print("Installing app from: \(ipaURL.path)")
 
-    return AsyncThrowingStream { continuation in
-        // Keep track of subscriptions & a cancellation token
+    // === IMPORTANT: explicitly specify element and failure types so the compiler selects
+    // the continuation-style initializer (the one that passes `continuation` to the closure).
+    typealias InstallUpdate = (progress: Double, status: String)
+    typealias StreamContinuation = AsyncThrowingStream<InstallUpdate, Error>.Continuation
+
+    return AsyncThrowingStream<InstallUpdate, Error> { continuation in
         var cancellables = Set<AnyCancellable>()
         var installTask: Task<Void, Never>?
 
-        // Ensure cleanup when the stream ends for whatever reason
-        continuation.onTermination = { @Sendable _ in
-            print("Install stream terminated — cleaning up.")
+        // Explicitly annotate the termination parameter type so compiler is happy
+        continuation.onTermination = { @Sendable (reason: StreamContinuation.Termination) in
+            print("Install stream terminated: \(reason)")
             cancellables.removeAll()
-            // cancel the installation task if still running
+            // cancel running install task if still active
             installTask?.cancel()
         }
 
-        // Start the async work on a Task so we can await inside
         installTask = Task {
             // Start heartbeat to keep connection alive
             HeartbeatManager.shared.start()
 
-            // initialize view model the same way UI does (important)
+            // initialize view model same as UI code (important)
             let isIdevice = UserDefaults.standard.integer(forKey: "Feather.installationMethod") == 1
             let viewModel = InstallerStatusViewModel(isIdevice: isIdevice)
 
-            // Log useful updates to console (debug)
-            viewModel.$status.sink { status in
-                print("[Installer] status ->", status)
-            }.store(in: &cancellables)
+            // Debug logging for status changes
+            viewModel.$status
+                .sink { status in
+                    print("[Installer] status ->", status)
+                }
+                .store(in: &cancellables)
 
+            // Progress stream (combine upload & install progress)
             viewModel.$uploadProgress
                 .combineLatest(viewModel.$installProgress)
                 .sink { uploadProgress, installProgress in
                     let overall = (uploadProgress + installProgress) / 2.0
-                    let status: String
+                    let statusText: String
                     if uploadProgress < 1.0 {
-                        status = "📤 Uploading..."
+                        statusText = "📤 Uploading..."
                     } else if installProgress < 1.0 {
-                        status = "📲 Installing..."
+                        statusText = "📲 Installing..."
                     } else {
-                        status = "🏁 Finalizing..."
+                        statusText = "🏁 Finalizing..."
                     }
-                    // debug
                     print("[Installer] progress upload:\(uploadProgress) install:\(installProgress) overall:\(overall)")
-                    continuation.yield((overall, status))
+                    continuation.yield((overall, statusText))
                 }
                 .store(in: &cancellables)
 
-            // Watch for completion via published isCompleted (robust across enum shapes)
+            // Robust completion detection: watch isCompleted
             viewModel.$isCompleted
                 .sink { completed in
                     if completed {
@@ -177,21 +182,20 @@ public func installApp(from ipaURL: URL) async throws
                 .store(in: &cancellables)
 
             do {
-                // Create the installer tied to the view model
                 let installer = await InstallationProxy(viewModel: viewModel)
 
-                // If you need same behaviour as UI, pass the suspend flag like the UI does:
-                // let suspend = (Bundle.main.bundleIdentifier == someIdentifier) // adapt as needed
-                // try await installer.install(at: ipaURL, suspend: suspend)
-
-                // For now, call the simpler signature – change to include 'suspend:' if needed
+                // If your UI calls install(at: suspend:) when updating itself,
+                // replicate that logic here if you need that behaviour.
                 try await installer.install(at: ipaURL)
 
-                // tiny pause so progress updates propagate
+                // small delay to let final progress propagate
                 try await Task.sleep(nanoseconds: 500_000_000)
 
-                print("Installation call returned without throwing — waiting for viewModel to report completion.")
-                // Don't force finish here: wait for the published isCompleted to fire (above)
+                print("Installation call returned — waiting for viewModel to report completion.")
+
+                // Note: we intentionally don't call continuation.finish() here -
+                // we rely on viewModel.$isCompleted to finish the stream so the
+                // installer has its normal lifecycle.
 
             } catch {
                 print("[Installer] install threw error ->", error)
@@ -201,4 +205,3 @@ public func installApp(from ipaURL: URL) async throws
         }
     }
 }
-
