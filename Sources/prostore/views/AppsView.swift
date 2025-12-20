@@ -86,7 +86,7 @@ public struct AppRaw: Decodable {
         }
     }
 }
-public struct AppVersion: Decodable {
+public struct AppVersion: Decodable, Sendable {
     let version: String?
     let date: String?
     let downloadURL: String?

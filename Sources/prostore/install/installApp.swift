@@ -145,11 +145,31 @@ public func installApp(from ipaURL: URL) async throws
             let viewModel = InstallerStatusViewModel(isIdevice: isIdevice)
 
             // Debug logging for status changes
-            viewModel.$status
-                .sink { status in
-                    print("[Installer] status ->", status)
-                }
-                .store(in: &cancellables)
+// Watch status for completion / errors (replace the previous $isCompleted sink)
+viewModel.$status
+    .sink { newStatus in
+        // If the view model exposes a computed Bool isCompleted, use it (safe regardless of enum shape)
+        if viewModel.isCompleted {
+            print("[Installer] detected completion via viewModel.isCompleted")
+            continuation.yield((1.0, "✅ Successfully installed app!"))
+            continuation.finish()
+            cancellables.removeAll()
+            return
+        }
+
+        // If the status enum contains an error / broken case, finish with that error
+        // This covers the case where broken carries an associated Error
+        if case .broken(let error) = newStatus {
+            print("[Installer] detected broken status ->", error)
+            continuation.finish(throwing: transformInstallError(error))
+            cancellables.removeAll()
+            return
+        }
+
+        // Optional: handle a status that carries failure inside .completed (if that variant exists)
+        // e.g. if your enum had `.completed(.failure(let e))` then add handling here.
+    }
+    .store(in: &cancellables)
 
             // Progress stream (combine upload & install progress)
             viewModel.$uploadProgress
