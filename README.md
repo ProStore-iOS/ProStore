@@ -5,6 +5,8 @@
 
 The **best** alternative app store for iOS!  
 
+> ⚠️ App Installs may not work at the moment. It is a known bug that we have been trying to fix.
+
 ---
 
 ## Install ProStore
@@ -86,4 +88,5 @@ or
 - **[AppleP12](https://check-p12.applep12.com/)** - Certificate Checker and Status
 
 ---
+
 
