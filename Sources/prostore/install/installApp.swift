@@ -1,65 +1,50 @@
-//  installApp.swift
 import Foundation
-import Combine
 import IDeviceSwift
+import Combine
 
-// MARK: - Error Transformer (kept + improved)
+// MARK: - Error Transformer (existing helpers kept)
 private func transformInstallError(_ error: Error) -> Error {
     let nsError = error as NSError
     let errorString = String(describing: error)
 
-    // Try to get a readable error first
-    if let userMessage = extractUserReadableErrorMessage(from: error),
-       !userMessage.isEmpty {
-        return NSError(domain: nsError.domain,
-                       code: nsError.code,
-                       userInfo: [NSLocalizedDescriptionKey: userMessage])
+    var userMessage = extractUserReadableErrorMessage(from: error)
+
+    if let userMessage = userMessage, !userMessage.isEmpty {
+        return NSError(domain: nsError.domain, code: nsError.code, userInfo: [NSLocalizedDescriptionKey: userMessage])
     }
 
-    // Specific patterns for "error 1" cases or common idevice failure messages
-    if errorString.contains("error 1") || errorString.contains("error 1.") {
+    if errorString.contains("error 1.") {
         if errorString.contains("Missing Pairing") {
-            return NSError(domain: nsError.domain,
-                           code: nsError.code,
-                           userInfo: [NSLocalizedDescriptionKey:
-                                        "Missing pairing file. Please ensure pairing file exists in the ProStore folder."])
-        }
-        if errorString.contains("afc_client_connect") || errorString.contains("Cannot connect to AFC") {
-            return NSError(domain: nsError.domain,
-                           code: nsError.code,
-                           userInfo: [NSLocalizedDescriptionKey:
-                                        "Cannot connect to AFC. Check USB connection, enable VPN loopback and accept the trust dialog on the device."])
-        }
-        if errorString.contains("installation_proxy") {
-            return NSError(domain: nsError.domain,
-                           code: nsError.code,
-                           userInfo: [NSLocalizedDescriptionKey:
-                                        "Installation service failed. The app may already be installed or device storage is full."])
+            return NSError(domain: nsError.domain, code: nsError.code, userInfo: [NSLocalizedDescriptionKey: "Missing pairing file. Please ensure pairing file exists in ProStore folder."])
         }
 
-        return NSError(domain: nsError.domain,
-                       code: nsError.code,
-                       userInfo: [NSLocalizedDescriptionKey:
-                                    "Installation failed. Make sure: 1) VPN is on, 2) Device is connected via USB, 3) Trust dialog is accepted, 4) Pairing file is in ProStore folder."])
+        if errorString.contains("Cannot connect to AFC") || errorString.contains("afc_client_connect") {
+            return NSError(domain: nsError.domain, code: nsError.code, userInfo: [NSLocalizedDescriptionKey: "Cannot connect to AFC. Check USB connection, VPN, and accept trust dialog on device."])
+        }
+
+        if errorString.contains("installation_proxy") {
+            return NSError(domain: nsError.domain, code: nsError.code, userInfo: [NSLocalizedDescriptionKey: "Installation service failed. The app may already be installed or device storage full."])
+        }
+
+        return NSError(domain: nsError.domain, code: nsError.code, userInfo: [NSLocalizedDescriptionKey: "Installation failed. Make sure: 1) VPN is on, 2) Device is connected via USB, 3) Trust dialog is accepted, 4) Pairing file is in ProStore folder."])
     }
 
-    // Clean and fallback
-    let cleaned = cleanGenericErrorMessage(nsError.localizedDescription)
-    return NSError(domain: nsError.domain,
-                   code: nsError.code,
-                   userInfo: [NSLocalizedDescriptionKey: cleaned])
+    let originalMessage = nsError.localizedDescription
+    let cleanedMessage = cleanGenericErrorMessage(originalMessage)
+
+    return NSError(domain: nsError.domain, code: nsError.code, userInfo: [NSLocalizedDescriptionKey: cleanedMessage])
 }
 
 private func extractUserReadableErrorMessage(from error: Error) -> String? {
     if let localizedError = error as? LocalizedError {
-        if let desc = localizedError.errorDescription, !desc.isEmpty { return desc }
+        return localizedError.errorDescription
     }
 
-    let errString = String(describing: error)
+    let errorString = String(describing: error)
 
-    let patterns: [String: String] = [
+    let patterns = [
         "Missing Pairing": "Missing pairing file. Please check ProStore folder.",
-        "Cannot connect to AFC": "Cannot connect to device. Check LocalDevVPN.",
+        "Cannot connect to AFC": "Cannot connect to device. Check USB and VPN.",
         "AFC Error:": "Device communication failed.",
         "Installation Error:": "App installation failed.",
         "File Error:": "File operation failed.",
@@ -67,7 +52,7 @@ private func extractUserReadableErrorMessage(from error: Error) -> String? {
     ]
 
     for (pattern, message) in patterns {
-        if errString.contains(pattern) {
+        if errorString.contains(pattern) {
             return message
         }
     }
@@ -111,151 +96,109 @@ private func cleanGenericErrorMessage(_ message: String) -> String {
 }
 
 // MARK: - Install App
-/// Installs a signed IPA on the device using InstallationProxy.
-/// NOTE:
-/// - If your UI layer already has a shared `InstallationProxy` or `InstallerStatusViewModel`,
-///   pass it via the `installer` parameter so we observe the *same* viewModel the installer updates.
-/// - If you don't pass one, we attempt to create a fresh `InstallationProxy()` and use its `viewModel`.
-public func installApp(
-    from ipaURL: URL,
-    using installer: InstallationProxy? = nil
-) async throws -> AsyncThrowingStream<(progress: Double, status: String), Error> {
+/// Installs a signed IPA on the device using InstallationProxy
+public func installApp(from ipaURL: URL) async throws
+-> AsyncThrowingStream<(progress: Double, status: String), Error> {
 
-    // Pre-flight check: verify IPA exists and is reasonable size
+    // Pre-flight check: verify IPA exists
     let fileManager = FileManager.default
     guard fileManager.fileExists(atPath: ipaURL.path) else {
-        throw NSError(domain: "InstallApp",
-                      code: -1,
-                      userInfo: [NSLocalizedDescriptionKey: "IPA file not found: \(ipaURL.lastPathComponent)"])
+        throw NSError(domain: "InstallApp", code: -1, userInfo: [NSLocalizedDescriptionKey: "IPA file not found: \(ipaURL.lastPathComponent)"])
     }
 
+    // Check file size
     do {
         let attributes = try fileManager.attributesOfItem(atPath: ipaURL.path)
         let fileSize = attributes[.size] as? Int64 ?? 0
         guard fileSize > 1024 else {
-            throw NSError(domain: "InstallApp",
-                          code: -1,
-                          userInfo: [NSLocalizedDescriptionKey: "IPA file is too small or invalid"])
+            throw NSError(domain: "InstallApp", code: -1, userInfo: [NSLocalizedDescriptionKey: "IPA file is too small or invalid"])
         }
     } catch {
-        throw NSError(domain: "InstallApp",
-                      code: -1,
-                      userInfo: [NSLocalizedDescriptionKey: "Cannot read IPA file"])
+        throw NSError(domain: "InstallApp", code: -1, userInfo: [NSLocalizedDescriptionKey: "Cannot read IPA file"])
     }
 
     print("Installing app from: \(ipaURL.path)")
 
-    return AsyncThrowingStream<(progress: Double, status: String), Error> { continuation in
-        // We'll run installer work in a Task so stream consumers can cancel the Task by cancelling the stream.
-        let installTask = Task {
+    return AsyncThrowingStream { continuation in
+        // Keep track of subscriptions & a cancellation token
+        var cancellables = Set<AnyCancellable>()
+        var installTask: Task<Void, Never>?
+
+        // Ensure cleanup when the stream ends for whatever reason
+        continuation.onTermination = { @Sendable _ in
+            print("Install stream terminated — cleaning up.")
+            cancellables.removeAll()
+            HeartbeatManager.shared.stop()
+            // cancel the installation task if still running
+            installTask?.cancel()
+        }
+
+        // Start the async work on a Task so we can await inside
+        installTask = Task {
+            // Start heartbeat to keep connection alive
             HeartbeatManager.shared.start()
 
-            // Get a real installer instance:
-            // - If the caller supplied one, use it (recommended).
-            // - Otherwise create a new InstallationProxy() and use its viewModel.
-            let installerInstance: InstallationProxy
-            do {
-                if let provided = installer {
-                    installerInstance = provided
-                } else {
-                    // Try to create one. The initializer used here (no-arg) may exist in your codebase.
-                    // If your InstallationProxy requires different construction, adjust here.
-                    installerInstance = await InstallationProxy()
-                }
-            } catch {
-                // If creating the installer throws for some reason, finish with transformed error
-                continuation.finish(throwing: transformInstallError(error))
-                return
-            }
+            // initialize view model the same way UI does (important)
+            let isIdevice = UserDefaults.standard.integer(forKey: "Feather.installationMethod") == 1
+            let viewModel = InstallerStatusViewModel(isIdevice: isIdevice)
 
-            // Attempt to obtain the installer's viewModel (the source of truth).
-            // If the installer exposes a `viewModel` property, use it. Otherwise, fallback to a fresh one.
-            // (Most implementations provide installer.viewModel or let you pass a viewModel to the installer initializer.)
-            let viewModel: InstallerStatusViewModel
-            if let vm = (installerInstance as AnyObject).value(forKey: "viewModel") as? InstallerStatusViewModel {
-                viewModel = vm
-            } else {
-                // Fallback — create a local viewModel and hope the installer updates it if supported via init(viewModel:).
-                viewModel = InstallerStatusViewModel()
-            }
+            // Log useful updates to console (debug)
+            viewModel.$status.sink { status in
+                print("[Installer] status ->", status)
+            }.store(in: &cancellables)
 
-            // Keep subscriptions alive for the duration of the stream
-            var cancellables = Set<AnyCancellable>()
-
-            // Progress publisher — combine upload + install progress into a single overall progress and status
             viewModel.$uploadProgress
                 .combineLatest(viewModel.$installProgress)
-                .receive(on: RunLoop.main)
                 .sink { uploadProgress, installProgress in
-                    let overall = max(0.0, min(1.0, (uploadProgress + installProgress) / 2.0))
-                    let statusStr: String
+                    let overall = (uploadProgress + installProgress) / 2.0
+                    let status: String
                     if uploadProgress < 1.0 {
-                        statusStr = "📤 Uploading..."
+                        status = "📤 Uploading..."
                     } else if installProgress < 1.0 {
-                        statusStr = "📲 Installing..."
+                        status = "📲 Installing..."
                     } else {
-                        statusStr = "🏁 Finalizing..."
+                        status = "🏁 Finalizing..."
                     }
-                    continuation.yield((overall, statusStr))
+                    // debug
+                    print("[Installer] progress upload:\(uploadProgress) install:\(installProgress) overall:\(overall)")
+                    continuation.yield((overall, status))
                 }
                 .store(in: &cancellables)
 
-            // Status updates — listen for completion or broken state
-            viewModel.$status
-                .receive(on: RunLoop.main)
-                .sink { installerStatus in
-                    switch installerStatus {
-                    case .completed(.success):
+            // Watch for completion via published isCompleted (robust across enum shapes)
+            viewModel.$isCompleted
+                .sink { completed in
+                    if completed {
+                        print("[Installer] detected completion via isCompleted=true")
                         continuation.yield((1.0, "✅ Successfully installed app!"))
                         continuation.finish()
                         cancellables.removeAll()
-
-                    case .completed(.failure(let error)):
-                        continuation.finish(throwing: transformInstallError(error))
-                        cancellables.removeAll()
-
-                    case .broken(let error):
-                        continuation.finish(throwing: transformInstallError(error))
-                        cancellables.removeAll()
-
-                    default:
-                        break
                     }
                 }
                 .store(in: &cancellables)
 
-            // If we fell back to a local viewModel and the InstallationProxy supports init(viewModel:),
-            // try to recreate an installer bound to that viewModel so it receives updates.
-            // (This is an optional defensive attempt — remove if your API doesn't offer `init(viewModel:)`.)
-            if (installer == nil) {
-                // If the installer was created without exposing a viewModel (rare), try to re-init with the viewModel.
-                // This block is safe to remove if your InstallationProxy doesn't have an init(viewModel:) initializer.
-                // Example (uncomment if available in your codebase):
-                //
-                // let reinstaller = await InstallationProxy(viewModel: viewModel)
-                // installerInstance = reinstaller
-                //
-                // For now, we proceed with the installerInstance we created above.
-            }
-
-            // Start the actual installation call
             do {
-                try await installerInstance.install(at: ipaURL)
-                // small delay for UI to reflect 100%
-                try await Task.sleep(nanoseconds: 300_000_000)
-                // note: success will be handled by the status publisher above (completed(.success))
-                print("Installer.install returned without throwing — waiting for status publisher.")
+                // Create the installer tied to the view model
+                let installer = await InstallationProxy(viewModel: viewModel)
+
+                // If you need same behaviour as UI, pass the suspend flag like the UI does:
+                // let suspend = (Bundle.main.bundleIdentifier == someIdentifier) // adapt as needed
+                // try await installer.install(at: ipaURL, suspend: suspend)
+
+                // For now, call the simpler signature – change to include 'suspend:' if needed
+                try await installer.install(at: ipaURL)
+
+                // tiny pause so progress updates propagate
+                try await Task.sleep(nanoseconds: 500_000_000)
+
+                print("Installation call returned without throwing — waiting for viewModel to report completion.")
+                // Don't force finish here: wait for the published isCompleted to fire (above)
+
             } catch {
-                // if install throws, map the error neatly and finish the stream
+                print("[Installer] install threw error ->", error)
                 continuation.finish(throwing: transformInstallError(error))
                 cancellables.removeAll()
             }
-        } // end Task
-
-        // When the AsyncThrowingStream is terminated (cancelled or finished), cancel the Task too
-        continuation.onTermination = { @Sendable termination in
-            installTask.cancel()
-            // if needed: do any additional cleanup here
         }
-    } // end AsyncThrowingStream
+    }
 }
