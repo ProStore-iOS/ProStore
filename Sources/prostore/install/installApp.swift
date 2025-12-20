@@ -128,7 +128,6 @@ public func installApp(from ipaURL: URL) async throws
         continuation.onTermination = { @Sendable _ in
             print("Install stream terminated — cleaning up.")
             cancellables.removeAll()
-            HeartbeatManager.shared.stop()
             // cancel the installation task if still running
             installTask?.cancel()
         }
@@ -202,3 +201,4 @@ public func installApp(from ipaURL: URL) async throws
         }
     }
 }
+
