@@ -11,11 +11,11 @@ The **best** alternative app store for iOS!
 
 ## Install ProStore
 
-<a href="https://prostore-ios.github.io/docs/">**INSTALL GUIDE / DOCUMENTATION**</a>  
+<a href="https://ProStore.NovaDev.vip/docs/">**INSTALL GUIDE / DOCUMENTATION**</a>  
 or  
-<a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=feather">Add to Feather</a>  
-<a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=esign">Add to ESign</a>  
-<a href="https://ProStore-IOS.github.io/sourceRedirect.html?app=scarlet">Add to Scarlet</a>  
+<a href="https://ProStore.NovaDev.vip/sourceRedirect.html?app=feather">Add to Feather</a>  
+<a href="https://ProStore.NovaDev.vip/sourceRedirect.html?app=esign">Add to ESign</a>  
+<a href="https://ProStore.NovaDev.vip/sourceRedirect.html?app=scarlet">Add to Scarlet</a>  
 or  
 <a href="https://github.com/ProStore-iOS/ProStore/releases/latest">Download IPA</a>
 
@@ -88,6 +88,7 @@ or
 - **[NovaDev Cert Checker API](https://NovaDev.vip/)** - Certificate Checker and Status
 
 ---
+
 
 
 
