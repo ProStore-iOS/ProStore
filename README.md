@@ -85,8 +85,9 @@ or
 - **[Khcrysalis](https://github.com/khcrysalis/) & [Zhlynn](https://github.com/zhlynn/)** - Creator of the [Zsign Package](https://github.com/khcrysalis/Zsign-Package)  
 - **[Khcrysalis](https://github.com/khcrysalis/)** - [iDeviceKit](https://github.com/khcrysalis/idevicekit)  
 - **[S0n1c](https://s0n1c.ca/)** - ProStore updater & installer  
-- **[AppleP12](https://check-p12.applep12.com/)** - Certificate Checker and Status
+- **[NovaDev Cert Checker API](https://NovaDev.vip/)** - Certificate Checker and Status
 
 ---
+
 
 
