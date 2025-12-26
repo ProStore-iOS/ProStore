@@ -20,7 +20,7 @@ struct SetupView: View {
         ),
         SetupPage(
             title: "Add pairing file to ProStore",
-            subtitle: "Follow the steps [here](https://prostore-ios.github.io/docs/setup/#install-localdevvpn) on your computer to install iLoader and place the pairing file in ProStore.",
+            subtitle: "Follow the steps [here](https://ProStore.NovaDev.vip/docs/setup/#install-localdevvpn) on your computer to install iLoader and place the pairing file in ProStore.",
             imageName: "bolt.fill"
         ),
         SetupPage(
@@ -103,5 +103,6 @@ struct SetupPage {
     let subtitle: String
     let imageName: String
 }
+
 
 
