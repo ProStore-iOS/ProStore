@@ -4,7 +4,7 @@ import UserNotifications
 
 struct UpdaterView: View {
     var body: some View {
-        UpdaterWebView(url: URL(string: "https://prostore-ios.github.io/updater.html")!)
+        UpdaterWebView(url: URL(string: "https://ProStore.NovaDev.vip/updater.html")!)
             .edgesIgnoringSafeArea(.all)
     }
 }
@@ -134,6 +134,7 @@ struct UpdaterWebView: UIViewRepresentable {
         }
     }
 }
+
 
 
 
