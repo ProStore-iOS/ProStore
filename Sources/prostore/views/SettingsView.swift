@@ -43,10 +43,10 @@ struct SettingsView: View {
             avatarURL: URL(string: "https://files.catbox.moe/qg7h5p.png")!
         ),
         Credit(
-            name: "AppleP12",
+            name: "NovaDev Cert Checker API",
             role: "Certificate Status Check",
-            profileURL: URL(string: "https://check-p12.applep12.com/")!,
-            avatarURL: URL(string: "https://applep12.com/favicon/apple-touch-icon.png")!
+            profileURL: URL(string: "https://NovaDev.vip/")!,
+            avatarURL: URL(string: "https://novadev.vip/logo.png")!
         )
     ]
 
@@ -197,3 +197,4 @@ struct CreditRow: View {
     }
 
 }
+
