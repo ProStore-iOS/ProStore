@@ -5,7 +5,7 @@
 
 The **best** alternative app store for iOS!  
 
-> ⚠️ App Installs may not work at the moment. It is a known bug that we have been trying to fix.
+> ⚠️ App Installs do not work at the moment and this project is discontinued. Feel free to fork it and continue the project as it will not be worked on.
 
 ---
 
@@ -88,6 +88,7 @@ or
 - **[NovaDev Cert Checker API](https://NovaDev.vip/)** - Certificate Checker and Status
 
 ---
+
 
 
 
