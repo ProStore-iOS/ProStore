@@ -333,7 +333,7 @@ jobs:
               fi
 
               # Fetch README.md containing the certificates table
-              curl -s https://raw.githubusercontent.com/ProStore-iOS/certificates/refs/heads/main/README.md -o readme.md
+              curl -s https://raw.githubusercontent.com/NovaDev404/NovaCerts/refs/heads/main/README.md -o readme.md
 
               echo "----- README excerpt -----"
               sed -n '1,200p' readme.md || true
