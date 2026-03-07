@@ -1,4 +1,7 @@
-<img src="icon.png" width="200" />
+> ## Please use NexStore as ProStore is discontinued and does not work properly  
+> ### [NexStore.novadev.vip](https://nexstore.novadev.vip)
+<br><br>
+<img src="icon.png" width="100" />
 
 # ProStore
 ![Latest Release](https://img.shields.io/github/v/release/ProStore-iOS/ProStore?style=for-the-badge)
@@ -88,6 +91,7 @@ or
 - **[NovaDev Cert Checker API](https://NovaDev.vip/)** - Certificate Checker and Status
 
 ---
+
 
 
 
